@@ -1,0 +1,12 @@
+# 统一行尾：工作树一律 LF，避免 core.autocrlf=true 导致跨平台检出字节漂移。
+* text=auto eol=lf
+
+# 二进制：不做文本转换与合并
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.zip binary

@@ -1,0 +1,45 @@
+{
+  "name": "@dsh-gamecenter/host",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DSH 游戏中心 Host 插件：Typert Remote 服务（gameCenter 命名空间）、运行代次与控制租约、模型目录只读投影。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.2.1-rc.2 <0.3.0"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.2",
+    "@dsh-gamecenter/client": "workspace:*",
+    "@dsh-gamecenter/protocol": "workspace:*"
+  },
+  "files": [
+    "lib",
+    "src",
+    "tools",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "license": "UNLICENSED"
+}

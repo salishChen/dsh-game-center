@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh-game-boy.invalid/schemas/manifest.v1.json",
+  "title": "GameCenter manifest v1 (gamecenter.json)",
+  "description": "固定提交内的运行契约。未知主版本必须拒绝解析。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "version", "sdk", "runtime", "save", "permissions"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62})(?:\\.[a-z0-9](?:[a-z0-9-]{0,62}))*$"
+    },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+([-+].*)?$" },
+    "sdk": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "entry"],
+      "properties": {
+        "kind": { "const": "web" },
+        "entry": { "type": "string", "pattern": "^dist/(?!.*(?:^|/)\\.\\.(?:/|$)).+$" }
+      }
+    },
+    "save": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "supportsResume", "checkpointPolicy"],
+      "properties": {
+        "schemaVersion": { "type": "integer", "minimum": 1 },
+        "supportsResume": { "type": "boolean" },
+        "checkpointPolicy": { "enum": ["each-action", "manual"] }
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["storage", "directNetwork"],
+      "properties": {
+        "storage": { "const": "game-scoped" },
+        "directNetwork": { "const": false }
+      }
+    },
+    "ai": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slots"],
+      "properties": {
+        "slots": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 32,
+          "patternProperties": {
+            "^[a-zA-Z][a-zA-Z0-9_-]{0,31}$": { "$ref": "#/$defs/slot" }
+          },
+          "additionalProperties": false
+        },
+        "sameModelGroup": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "items": { "type": "string" },
+            "uniqueItems": true
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "modality": { "enum": ["text", "image", "audio", "video"] },
+    "operation": {
+      "enum": [
+        "chat.generate",
+        "image.generate",
+        "image.edit",
+        "audio.transcribe",
+        "audio.synthesize",
+        "video.understand",
+        "video.generate"
+      ]
+    },
+    "slot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "operation", "requires"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "operation": { "$ref": "#/$defs/operation" },
+        "requires": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["input", "output"],
+          "properties": {
+            "input": { "$ref": "#/$defs/modalityList" },
+            "output": { "$ref": "#/$defs/modalityList" }
+          }
+        },
+        "fallback": { "enum": ["bundled-assets", "skip"] }
+      }
+    },
+    "modalityList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/modality" }
+    }
+  }
+}

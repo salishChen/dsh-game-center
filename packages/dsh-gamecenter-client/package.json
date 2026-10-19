@@ -1,0 +1,45 @@
+{
+  "name": "@dsh-gamecenter/client",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DSH 游戏中心 Client 插件：DSH 内入口与弹层、游戏中心状态、隔离 iframe 运行时与专用 MessagePort Bridge。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./src/types/index.d.ts",
+      "default": "./dist/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  },
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  },
+  "files": [
+    "dist",
+    "lib/index.js",
+    "lib/index.d.ts",
+    "src/types",
+    "package.json"
+  ],
+  "scripts": {
+    "build": "node tools/build-bundle.mjs",
+    "build:candidate": "node tools/build-candidate.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test test/runtime-lease.test.mjs test/host-bridge.test.mjs test/bridge-constants.test.mjs test/assembly.test.mjs test/focus.test.mjs test/bundle-shape.test.mjs test/remote-mount.test.mjs test/wire-contract.test.mjs test/discovery-chain.test.mjs test/host-half-types.test.mjs test/diagnostics.test.mjs test/real-host-staging-joint.test.mjs test/diagnostics-ui.test.mjs"
+  },
+  "license": "UNLICENSED"
+}

@@ -1,0 +1,31 @@
+{
+  "name": "@dsh-gamecenter/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DSH 游戏中心共享协议：manifest / catalog 机器块 / Bridge / save / 能力 / 错误码 / DSH 版本锁定。零运行时依赖，对外暴露可重复构建的 ESM dist 与类型声明。",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./schemas/*": "./schemas/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "schemas"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.build.json && node --test test/contract.test.mjs"
+  },
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  }
+}

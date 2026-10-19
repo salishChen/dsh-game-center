@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh-game-boy.invalid/schemas/save.v1.json",
+  "title": "GameCenter save v1",
+  "description": "Host 权威存档结构。游戏 state 为不透明 JSON，平台只做大小与完整性校验。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "saveFormatVersion",
+    "gameStateSchemaVersion",
+    "gameId",
+    "saveId",
+    "installedCommit",
+    "revision",
+    "status",
+    "elapsedGameMs",
+    "rngState",
+    "modelBindings",
+    "state",
+    "assetIds",
+    "lastAppliedOperationIds"
+  ],
+  "properties": {
+    "saveFormatVersion": { "const": 1 },
+    "gameStateSchemaVersion": { "type": "integer", "minimum": 1 },
+    "gameId": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62})(?:\\.[a-z0-9](?:[a-z0-9-]{0,62}))*$"
+    },
+    "saveId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "installedCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "status": { "enum": ["running", "paused", "finished", "recovery-available"] },
+    "elapsedGameMs": { "type": "integer", "minimum": 0 },
+    "rngState": { "type": "string", "maxLength": 4096 },
+    "modelBindings": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["providerId", "modelId"],
+        "properties": {
+          "providerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "modelId": { "type": "string", "minLength": 1, "maxLength": 256 }
+        }
+      }
+    },
+    "state": {},
+    "assetIds": {
+      "type": "array",
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+    },
+    "lastAppliedOperationIds": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+    },
+    "integrityDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

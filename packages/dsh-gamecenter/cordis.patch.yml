@@ -1,0 +1,54 @@
+# DSH 游戏中心 Host bundle 的 Loader 层。
+#
+# 这个文件被 package.json 的 dsh.bundle.patch 引用，由 dsh-app-boot 的
+# loadProfileDirectory() 按 dsh.profile.bundles 顺序叠加进 Loader 树。
+#
+# 为什么需要它：dsh-app-boot/lib/index.js 第 1023-1024 行
+#   if (bundle === void 0) throw new Error(`... declares no dsh.bundle in its package.json`)
+# 缺 dsh.bundle 的包会被收进 skippedBundles 并**静默跳过**（第 1035-1040 行），
+# 界面上表现为"什么都没发生"，很难排查。
+#
+# ## 条目设计（每条都有源码依据，勿随意增删）
+#
+# - id 是被 patch 定位与 switch 用的稳定标识；name 是 Loader 直接解析的模块名。
+# - name 必须是**精确包名**（@scope/name 恰好两段）。依据 dsh-client-modules 第 83 行
+#   exactPackageSpecifier()：不是精确包名时 locatePkgJson() 第 766 行直接返回 undefined。
+#
+# ## 为什么必须分别登记 Host 和 Client（两条，不能合并、不能省一条）
+#
+# dsh-client-modules 的 discovery 是**按 Loader 条目名逐个**进行的：
+#
+#   1. `locatePkgJson(loaderName, baseUrl)` 第 765 行：
+#        const expectedPackageName = pathLike ? void 0 : exactPackageSpecifier(loaderName)
+#      → **expectedPackageName 恒等于该条目的 name**。
+#   2. 第 791 行 `nearestPackage(moduleUrl, expectedPackageName)`；
+#      第 800 行要求 `name === expectedPackageName` 才认。
+#   3. 因此 name = "@dsh-gamecenter/host" 的条目**只会解析出 Host 包**，
+#      resolveMeta 读它的 `dsh.client` 得到 undefined → 返回 null → 不被当作 Client 源。
+#
+# 结论：Host 包 import Client 包**不会**让 Client 被发现。Client 必须有自己的 Loader 条目。
+# （这条我最初判错，是测试与发布负责人按源码复刻 runs 后证伪的，已修正并留证。）
+#
+# ## 每个包各自只能一条（≠ 整个 patch 只能一条）
+#
+# reconcilePackage() 第 893-896 行判的是「**同一 packageName** 命中多个 active source」，
+# 例如两条都叫 "@dsh-gamecenter/host" 才会 throw
+# "resolves from multiple active Loader sources ... remove one entry"。
+# host 与 client 是**两个不同包名**，各登记一条完全合法。我此前把这条读窄了。
+#
+# ## 为什么 Client 不放进 dsh.profile.bundles
+#
+# Client 包**没有** dsh.bundle，按 app-boot 第 1024 行会被 throw 并静默跳过。
+# 它只作为 Loader 条目出现（Loader 条目不需要 dsh.bundle）。
+#
+# ## 前置条件（已在 Node 侧验证，非 DSH-REAL）
+#
+# Client 包的 `exports["."].default` 必须指向一个**纯 Node 可加载的 Host 半入口**
+# （当前为 lib/index.js，导出 name/apply/default，无副作用、不碰 window）。
+# 若它指向 dist/client.js（浏览器 bundle），Loader 解析该条目时求值会抛
+# ReferenceError: window is not defined。
+- insert:
+    - id: gamecenter-host
+      name: "@dsh-gamecenter/host"
+    - id: gamecenter-client
+      name: "@dsh-gamecenter/client"

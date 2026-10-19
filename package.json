@@ -1,0 +1,22 @@
+{
+  "name": "dsh-game-boy",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DSH 游戏中心：以 GitHub/Gitee Issue 为目录、独立 Git 仓库分发游戏、由游戏中心统一提供模型/存档/生命周期的 DSH 插件集合。",
+  "type": "module",
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm --filter @dsh-gamecenter/protocol run build && pnpm -r --filter=!@dsh-gamecenter/protocol --if-present run build",
+    "typecheck": "pnpm --filter @dsh-gamecenter/protocol run typecheck && pnpm -r --filter=!@dsh-gamecenter/protocol --if-present run typecheck",
+    "test": "pnpm --filter @dsh-gamecenter/protocol run build && pnpm -r --filter=!@dsh-gamecenter/protocol --if-present run test"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.2",
+    "esbuild": "0.28.2",
+    "typescript": "5.7.3"
+  }
+}

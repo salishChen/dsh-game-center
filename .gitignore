@@ -1,0 +1,31 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+
+# 部署暂存与回滚取证（仅本机，不入库）
+staging/
+staging-rollback/
+
+# 构建/运行缓存
+.cache/
+coverage/
+
+# 临时目录、探针输出与执行日志
+tmp/
+.tmp/
+*.tmp
+*.log
+
+# 探针提取的 DSH 第三方源码与本地 arena（probe 脚本默认写系统临时目录；
+# 若有人手工改到仓库内，也必须确保不入库）
+_extracted/
+dsx-extract/
+cordis-real/
+gateway-arena/
+probe-out/
+
+# packages/protocol/src 内的历史 tsc 残留（生成物；真实产物在 packages/protocol/dist/）
+packages/protocol/src/**/*.js
+packages/protocol/src/**/*.js.map
+packages/protocol/src/**/*.d.ts
