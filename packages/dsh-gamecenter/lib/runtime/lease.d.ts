@@ -13,7 +13,9 @@
  *
  * 本文件不依赖任何 DSH 模块，可被 Node 直接单测。
  */
-import type { ErrorCode, RuntimeLease } from '@dsh-gamecenter/protocol';
+import type { ErrorCode, RuntimeLease, LeaseReclaimReason, AbandonRuntimeResult } from '@dsh-gamecenter/protocol';
+import { LEASE_ACK_WINDOW_MS } from '@dsh-gamecenter/protocol';
+export { LEASE_ACK_WINDOW_MS };
 /**
  * 错误码直接复用协议权威定义。
  *
@@ -38,6 +40,17 @@ export type LeaseState =
  | 'recovery-available'
 /** 已停止（正常结束或强制终止）。 */
  | 'stopped';
+/** 接管前的前序封存租约快照（未确认握手被回收时还原槽位状态）。 */
+export interface PriorSealedSnapshot {
+    runtimeInstanceId: string;
+    generation: number;
+    expiresAt: string;
+    state: LeaseState;
+    lastPersistedRevision: number;
+    tokenDigest: string;
+    launchTokenDigest: string;
+    authorizedFinalOperationId?: string | undefined;
+}
 export interface LeaseRecord {
     /** 运行实例 id：由 Host 生成，游戏不能自选。 */
     runtimeInstanceId: string;
@@ -57,6 +70,16 @@ export interface LeaseRecord {
      * Host 侧只留 sha256 摘要用于比对（避免日志/快照泄露凭据）。
      */
     tokenDigest: string;
+    /** 启动令牌摘要；用于 abandonRuntime 交叉校验与防篡改。 */
+    launchTokenDigest: string;
+    /** 握手未确认的回收截止时间（ISO 8601，nowMs + LEASE_ACK_WINDOW_MS）。 */
+    ackDeadline: string;
+    /** 租约时长（毫秒），供首次调用确认进入 running 时重置 expiresAt。 */
+    ttlMs: number;
+    /** 接管前的前序封存租约快照（未确认握手被回收时还原槽位状态）。 */
+    priorSealedSnapshot?: PriorSealedSnapshot | undefined;
+    /** pausing 阶段绑定的授权最终操作 ID。只允许该 operationId 的首写与幂等重试，拒绝额外写入。 */
+    authorizedFinalOperationId?: string | undefined;
 }
 export interface LeaseViolation {
     ok: false;
@@ -78,6 +101,8 @@ export interface AcquireInput {
     generation: number;
     runtimeInstanceId: string;
     tokenDigest: string;
+    /** 启动令牌摘要；用于 abandonRuntime 交叉校验与防篡改。 */
+    launchTokenDigest: string;
     /** 当前时间（毫秒），由调用方注入以便测试。 */
     nowMs: number;
 }
@@ -148,6 +173,21 @@ export declare class LeaseRegistry {
      * 且第二轮诊断会命中上一轮已封存的租约而返回错码。见 docs/phase0-host.md §14。
      */
     private readonly byToken;
+    /**
+     * 已被新代次取代的凭证摘要（`tokenDigest → { generation, sealedAtMs }`）。
+     *
+     * **为什么必须单独记**：`acquire()` 会用新租约覆盖同一个 saveKey，
+     * 如果只保留 `byToken → saveKey`，旧实例的凭证摘要会继续指向**新**租约，
+     * 于是旧实例拿着自己的凭证就能写新代次的存档。
+     * 2026-10-20 探针 N7e 实测复现：已 `saveAck` 封存的实例A 在实例B 接管后写入成功
+     * （revision 3 → 4），来源就是这个索引残留。现在旧摘要登记在此，永久解析为 `STALE_RUNTIME`。
+     */
+    private readonly supersededTokens;
+    /**
+     * 已主动放弃的运行实例索引（`runtimeInstanceId → launchTokenDigest`）。
+     * 无论握手先到还是取消先到，均可判定与拦截，且多次取消幂等。
+     */
+    private readonly abandonedInstances;
     /** 组合键：同一 saveId 至多一个活跃租约（基线 §8.4）。 */
     private static saveKey;
     /**
@@ -158,6 +198,28 @@ export declare class LeaseRegistry {
         ok: true;
         lease: LeaseRecord;
     } | LeaseViolation;
+    /**
+     * 把某个存档上**已不是当前租约**的全部凭证摘要移入 `supersededTokens`。
+     *
+     * 必须在 `bySave.set(key, 新租约)` **之前**调用：一旦覆盖，`byToken` 里旧摘要
+     * 指向的 saveKey 会解析到新租约，旧凭证就被错误地"继承"给新代次（N7e 的根因）。
+     * 只处理"与 prior 租约绑定"的摘要：新摘要尚未入表，因此不会被误删。
+     */
+    private supersedePriorFor;
+    /**
+     * 回收未确认的握手租约（因超时或主动 abandon）。
+     * 封存该租约、移入 supersededTokens、从 byToken 删除；
+     * 若存在 priorSealedSnapshot 则还原槽位状态为封存态；不得回退代次或复活旧凭证。
+     */
+    reclaimUnconfirmed(key: string, lease: LeaseRecord, reason: LeaseReclaimReason, nowMs: number): void;
+    /**
+     * 惰性 / 定时扫描未确认超时的握手租约（T_ack 超时）。
+     * 只回收处于 pending 态且超过 ackDeadline 的租约；已 running 的租约永不误回收。
+     */
+    sweepUnconfirmed(nowMs: number): LeaseRecord[];
+    hasAbandoned(runtimeInstanceId: string): boolean;
+    getAbandonedDigest(runtimeInstanceId: string): string | undefined;
+    abandonRuntime(runtimeInstanceId: string, launchTokenDigest: string, nowMs: number): AbandonRuntimeResult;
     get(gameId: string, saveId: string): LeaseRecord | undefined;
     /** 所有租约（审计与代次推进用；返回内部引用，调用方不得修改）。 */
     all(): LeaseRecord[];

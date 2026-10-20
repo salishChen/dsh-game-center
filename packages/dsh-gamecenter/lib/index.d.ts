@@ -21,7 +21,11 @@
  * - 不改 DSH 安装目录、不写玩家 profile、不启动替代服务器。
  * - 不在装载时发起任何模型调用（含 `stream()`）；`modelCatalog` 只在被调用时读目录。
  */
-import { GameCenterCore } from './remote/game-center-service.ts';
+import type { ApprovedRelease, CatalogMachineEntry } from '@dsh-gamecenter/protocol';
+import { GameCenterCore, type GameCenterService } from './remote/game-center-service.ts';
+import { SaveStore, type SaveStorageBackend } from './storage/save-store.ts';
+export * from './storage/save-store.ts';
+export * from './storage/sqlite-save-backend.ts';
 /**
  * ## 为什么这里**没有** `import '@dsh-gamecenter/client'`（曾加过，已移除）
  *
@@ -50,21 +54,67 @@ import { GameCenterCore } from './remote/game-center-service.ts';
  */
 /** Cordis 注入声明：只读模型目录需要 `llm`。 */
 export declare const inject: readonly string[];
+/** 握手未确认扫描间隔（默认 1000ms；与 LEASE_ACK_WINDOW_MS 3000ms 构成 4000ms 硬上界）。 */
+export declare const SCAN_INTERVAL_MS = 1000;
 export interface HostPluginOptions {
+    /** 显式绝对数据目录路径；必须为绝对路径，未提供且无 storageBackend 时显式抛错拒绝启动 */
+    dataDir?: string | undefined;
+    /** 受信宿主 playerId；缺失或非法时显式抛错拒绝启动 */
+    playerId?: string | undefined;
+    /** 游戏安装目录；缺省位于 dataDir/games */
+    gameLibraryDir?: string | undefined;
+    /** 预览目录路径 */
+    previewDir?: string | undefined;
+    /** 已审批发布列表 */
+    approvals?: readonly ApprovedRelease[] | undefined;
+    /** 目录模式，默认 'fixture' */
+    catalogMode?: ('github' | 'fixture') | undefined;
+    /** 目录 fixture 列表 */
+    catalogFixtureEntries?: readonly CatalogMachineEntry[] | undefined;
     /** 租约 TTL 毫秒。 */
-    ttlMs?: number;
+    ttlMs?: number | undefined;
+    /** 自定义存储后端（测试/对账注入用） */
+    storageBackend?: SaveStorageBackend | undefined;
+    /** 握手未确认租约扫描周期毫秒，默认 1000ms（SCAN_INTERVAL_MS）。 */
+    scanIntervalMs?: number | undefined;
+    /** 时间注入函数（测试/对账使用）。 */
+    nowMs?: (() => number) | undefined;
 }
 export interface HostPluginApi {
     readonly core: GameCenterCore;
+    readonly saveStore: SaveStore;
+    readonly service: GameCenterService;
+    readonly playerId: string;
+    readonly dataDir?: string | undefined;
+    readonly gameLibraryDir: string;
     /** 是否成功实例化 Remote 服务。 */
     readonly remoteMounted: boolean;
+    readonly scanIntervalMs: number;
     readonly dispose: () => void;
 }
+/**
+ * 受信宿主 playerId 安全解析。
+ *
+ * 规则（PM 2026-10-20 硬要求）：
+ * 1. 优先从 options.playerId 获取；
+ * 2. 其次从宿主上下文 ctx 获取（如 ctx.playerId 或 ctx.user?.id）；
+ * 3. 缺失或包含路径穿越字符（'..', '/', '\'）坚决抛错拒启，严禁静默回退 default-player。
+ */
+export declare function resolvePlayerId(ctx: unknown, options?: HostPluginOptions): string;
+/**
+ * 宿主数据目录安全解析。
+ *
+ * 规则（PM 2026-10-20 硬要求）：
+ * 1. 必须由 options.dataDir 显式配置绝对路径；
+ * 2. 缺失或非绝对路径显式抛错拒绝启动；
+ * 3. 禁止未核实环境变量盲目猜测真实 profile 路径，禁止落入 cwd。
+ */
+export declare function resolveDataDir(options?: HostPluginOptions): string;
 /**
  * 运行凭证摘要（**密码学摘要**）。
  *
  * 历史：早期是 `noncrypto-fnv1a64`（无依赖、仅用于"不存原文"）。现在凭证成为
- * **身份认证依据**（`pause`/`saveAck`/`leaseStatus` 靠它定位租约），
+ * **身份认证依据**（`pause`/`saveAck`/`leaseStatus`/`saveCheckpoint` 靠它定位租约），
  * 非密码学摘要在攻击者可控输入下可被碰撞/预映像，**不足以承担认证**，
  * 因此改用 `node:crypto` 的 SHA-256。
  * 只存摘要、不存原文；原文仅在握手响应里下发一次给 Client Bridge。

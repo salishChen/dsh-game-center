@@ -48,7 +48,8 @@ export function runRemoteDiagnostics({ remoteState, client, makeNonce, onRow, si
  *
  * 契约与安全硬约束：
  * 1. 独立探针实例：使用专用 gameId（`__gamecenter_diag__`），生成独立 runtimeInstanceId。
- * 2. 同一链条复用：saveId 由 Host 内部绑定为 runtimeInstanceId，因此链内贯通复用同一 ID。
+ * 2. 同一链条复用：saveId 是**存档槽位**（固定 `save-default`），与 runtimeInstanceId 分离；
+ *    链内所有依赖租约的探针（handshake / leaseStatus / pause / saveAck）复用同一槽位。
  * 3. 严格只读/无付费：modelCatalog 只读元数据，绝不发起 stream/模型调用。
  * 4. 真实结果判定：旧代次 saveAck 必须严格断言 STALE_RUNTIME 错误，不把失败当成功。
  * 5. 错误脱敏：不展示 token 等凭据，错误消息做安全截断。

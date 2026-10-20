@@ -83,7 +83,9 @@ export function sdkRangeAccepts(range: string, hostVersion: string = SDK_VERSION
     )
   }
 
-  const andRange = /^>=\s*(\d+\.\d+\.\d+)\s+<\s*(\d+\.\d+\.\d+)$/.exec(trimmed)
+  const andRange = /^>=\s*(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\s+<\s*(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)$/.exec(
+    trimmed,
+  )
   if (andRange?.[1] && andRange[2]) {
     const lower = parseSemver(andRange[1])
     const upper = parseSemver(andRange[2])

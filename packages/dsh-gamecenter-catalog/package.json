@@ -1,0 +1,32 @@
+{
+  "name": "@dsh-gamecenter/catalog",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DSH 游戏中心目录与安装器：GitHub Issues 目录同步、条目缓存与审批比对、固定提交安全下载/校验与版本隔离安装。",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.build.json && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@dsh-gamecenter/protocol": "workspace:*"
+  },
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "license": "UNLICENSED"
+}

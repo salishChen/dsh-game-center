@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 /**
@@ -194,7 +195,7 @@ test('产物中无任何外部包运行时导入', () => {
     return out
   }
   const external = []
-  const allowed = new Set(['@deepseek-ai/dsh-typert-protocol', '@deepseek-ai/cordis'])
+  const allowed = new Set(['@deepseek-ai/dsh-typert-protocol', '@deepseek-ai/cordis', '@dsh-gamecenter/protocol', '@dsh-gamecenter/catalog'])
   for (const file of walk(path.join(pkgDir, 'lib'))) {
     const source = fs.readFileSync(file, 'utf8')
     for (const pattern of patterns) {
@@ -229,7 +230,7 @@ test('产物在真实 Context 下装配成功且 remoteMounted=true', async () =
   const { Context } = await import('@deepseek-ai/cordis')
   const mod = await import(pathToFileURL(libIndex).href)
   const root = new Context()
-  const api = mod.apply(root)
+  const api = mod.apply(root, { playerId: 'test-artifact-player', dataDir: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-gc-artifact-')), 'data') })
   assert.equal(api.remoteMounted, true)
 })
 
@@ -237,7 +238,7 @@ test('产物中的核心逻辑可端到端执行：握手 → 暂停 → 旧代�
   const { Context } = await import('@deepseek-ai/cordis')
   const mod = await import(pathToFileURL(libIndex).href)
   const root = new Context()
-  const api = mod.apply(root)
+  const api = mod.apply(root, { playerId: 'test-artifact-player', dataDir: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-gc-artifact-')), 'data') })
 
   const hs = api.core.handshake({
     runtimeInstanceId: 'rt-artifact-1',
@@ -246,6 +247,9 @@ test('产物中的核心逻辑可端到端执行：握手 → 暂停 → 旧代�
     gameVersion: '1.0.0',
     sdkVersion: '1.0.0',
     bridgeVersion: 1,
+    // 阶段1 起握手必填存档槽位与启动令牌（2026-10-20 冻结）
+    saveId: 'save-default',
+    launchToken: 'artifact-launch-token-0123456789abcdef',
   })
   assert.equal(hs.ok, true)
   assert.equal(typeof hs.generation, 'number')
@@ -272,7 +276,10 @@ test('staging 修复候选产物在真实 Context 下装配成功且 remoteMount
   const { Context } = await import('@deepseek-ai/cordis')
   const mod = await import(pathToFileURL(stagingIndex).href)
   const root = new Context()
-  const api = mod.apply(root)
+  const api = mod.apply(root, {
+    playerId: 'test-staging-player',
+    storageBackend: new mod.MemorySaveBackend(),
+  })
   assert.equal(api.remoteMounted, true, '必须成功装配 Remote 服务')
   assert.ok(root.reflect.props['gameCenter'], '必须在 context 登记 gameCenter 服务')
 })
@@ -282,7 +289,10 @@ test('staging 修复候选产物中的凭证绑定逻辑端到端执行', async 
   const { Context } = await import('@deepseek-ai/cordis')
   const mod = await import(pathToFileURL(stagingIndex).href)
   const root = new Context()
-  const api = mod.apply(root)
+  const api = mod.apply(root, {
+    playerId: 'test-staging-player',
+    storageBackend: new mod.MemorySaveBackend(),
+  })
 
   const hs = api.core.handshake({
     runtimeInstanceId: 'rt-staging-1',
@@ -291,6 +301,9 @@ test('staging 修复候选产物中的凭证绑定逻辑端到端执行', async 
     gameVersion: '1.0.0',
     sdkVersion: '1.0.0',
     bridgeVersion: 1,
+    // 2026-10-20 起 saveId 与 launchToken 是握手必填（Host 不再回退 runtimeInstanceId）。
+    saveId: 'save-default',
+    launchToken: 'launch-token-0123456789abcdef0123456789',
   })
   assert.equal(hs.ok, true)
   assert.equal(typeof hs.runtimeToken, 'string')

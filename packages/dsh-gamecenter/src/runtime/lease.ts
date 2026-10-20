@@ -14,7 +14,10 @@
  * 本文件不依赖任何 DSH 模块，可被 Node 直接单测。
  */
 
-import type { ErrorCode, RuntimeLease } from '@dsh-gamecenter/protocol'
+import type { ErrorCode, RuntimeLease, LeaseReclaimReason, AbandonRuntimeResult } from '@dsh-gamecenter/protocol'
+import { LEASE_ACK_WINDOW_MS } from '@dsh-gamecenter/protocol'
+
+export { LEASE_ACK_WINDOW_MS }
 
 /**
  * 错误码直接复用协议权威定义。
@@ -42,6 +45,18 @@ export type LeaseState =
   /** 已停止（正常结束或强制终止）。 */
   | 'stopped'
 
+/** 接管前的前序封存租约快照（未确认握手被回收时还原槽位状态）。 */
+export interface PriorSealedSnapshot {
+  runtimeInstanceId: string
+  generation: number
+  expiresAt: string
+  state: LeaseState
+  lastPersistedRevision: number
+  tokenDigest: string
+  launchTokenDigest: string
+  authorizedFinalOperationId?: string | undefined
+}
+
 export interface LeaseRecord {
   /** 运行实例 id：由 Host 生成，游戏不能自选。 */
   runtimeInstanceId: string
@@ -61,6 +76,16 @@ export interface LeaseRecord {
    * Host 侧只留 sha256 摘要用于比对（避免日志/快照泄露凭据）。
    */
   tokenDigest: string
+  /** 启动令牌摘要；用于 abandonRuntime 交叉校验与防篡改。 */
+  launchTokenDigest: string
+  /** 握手未确认的回收截止时间（ISO 8601，nowMs + LEASE_ACK_WINDOW_MS）。 */
+  ackDeadline: string
+  /** 租约时长（毫秒），供首次调用确认进入 running 时重置 expiresAt。 */
+  ttlMs: number
+  /** 接管前的前序封存租约快照（未确认握手被回收时还原槽位状态）。 */
+  priorSealedSnapshot?: PriorSealedSnapshot | undefined
+  /** pausing 阶段绑定的授权最终操作 ID。只允许该 operationId 的首写与幂等重试，拒绝额外写入。 */
+  authorizedFinalOperationId?: string | undefined
 }
 
 export interface LeaseViolation {
@@ -83,6 +108,8 @@ export interface AcquireInput {
   generation: number
   runtimeInstanceId: string
   tokenDigest: string
+  /** 启动令牌摘要；用于 abandonRuntime 交叉校验与防篡改。 */
+  launchTokenDigest: string
   /** 当前时间（毫秒），由调用方注入以便测试。 */
   nowMs: number
 }
@@ -191,6 +218,23 @@ export class LeaseRegistry {
    */
   private readonly byToken = new Map<string, string>()
 
+  /**
+   * 已被新代次取代的凭证摘要（`tokenDigest → { generation, sealedAtMs }`）。
+   *
+   * **为什么必须单独记**：`acquire()` 会用新租约覆盖同一个 saveKey，
+   * 如果只保留 `byToken → saveKey`，旧实例的凭证摘要会继续指向**新**租约，
+   * 于是旧实例拿着自己的凭证就能写新代次的存档。
+   * 2026-10-20 探针 N7e 实测复现：已 `saveAck` 封存的实例A 在实例B 接管后写入成功
+   * （revision 3 → 4），来源就是这个索引残留。现在旧摘要登记在此，永久解析为 `STALE_RUNTIME`。
+   */
+  private readonly supersededTokens = new Map<string, { generation: number; sealedAtMs: number }>()
+
+  /**
+   * 已主动放弃的运行实例索引（`runtimeInstanceId → launchTokenDigest`）。
+   * 无论握手先到还是取消先到，均可判定与拦截，且多次取消幂等。
+   */
+  private readonly abandonedInstances = new Map<string, string>()
+
   /** 组合键：同一 saveId 至多一个活跃租约（基线 §8.4）。 */
   private static saveKey(gameId: string, saveId: string): string {
     return `${gameId}\u0000${saveId}`
@@ -201,6 +245,7 @@ export class LeaseRegistry {
    * 基线要求「从另一个窗口接管时先暂停旧实例」，顶替必须显式发生。
    */
   acquire(input: AcquireInput): { ok: true; lease: LeaseRecord } | LeaseViolation {
+    this.sweepUnconfirmed(input.nowMs)
     const key = LeaseRegistry.saveKey(input.gameId, input.saveId)
     const existing = this.bySave.get(key)
     if (existing !== undefined && !existing.sealed && existing.state !== 'stopped') {
@@ -217,6 +262,22 @@ export class LeaseRegistry {
         previous: existing.generation,
       })
     }
+
+    // 记录接管前已封存实例的快照，若本次新握手未确认超时/放弃，可将槽位状态无损还原
+    let priorSealedSnapshot: PriorSealedSnapshot | undefined
+    if (existing !== undefined && existing.sealed) {
+      priorSealedSnapshot = {
+        runtimeInstanceId: existing.runtimeInstanceId,
+        generation: existing.generation,
+        expiresAt: existing.expiresAt,
+        state: existing.state,
+        lastPersistedRevision: existing.lastPersistedRevision,
+        tokenDigest: existing.tokenDigest,
+        launchTokenDigest: existing.launchTokenDigest,
+        authorizedFinalOperationId: existing.authorizedFinalOperationId,
+      }
+    }
+
     const ttl = Number.isFinite(input.ttlMs) && input.ttlMs > 0 ? input.ttlMs : DEFAULT_TTL_MS
     const lease: LeaseRecord = {
       runtimeInstanceId: input.runtimeInstanceId,
@@ -226,12 +287,152 @@ export class LeaseRegistry {
       expiresAt: isoFrom(input.nowMs + ttl),
       state: 'pending',
       sealed: false,
-      lastPersistedRevision: 0,
+      lastPersistedRevision: existing?.lastPersistedRevision ?? 0,
       tokenDigest: input.tokenDigest,
+      launchTokenDigest: input.launchTokenDigest,
+      ackDeadline: isoFrom(input.nowMs + LEASE_ACK_WINDOW_MS),
+      ttlMs: ttl,
+      priorSealedSnapshot,
+    }
+    // 同一 saveKey 上被取代的旧代次凭证一律作废：新代次接管后，旧 iframe 不得再写。
+    // 必须在写入新租约**之前**执行，否则旧摘要会被解析成新租约（N7e 根因）。
+    if (existing !== undefined) {
+      this.supersedePriorFor(key, existing.generation, input.nowMs)
     }
     this.bySave.set(key, lease)
     this.byToken.set(input.tokenDigest, key)
     return { ok: true, lease }
+  }
+
+  /**
+   * 把某个存档上**已不是当前租约**的全部凭证摘要移入 `supersededTokens`。
+   *
+   * 必须在 `bySave.set(key, 新租约)` **之前**调用：一旦覆盖，`byToken` 里旧摘要
+   * 指向的 saveKey 会解析到新租约，旧凭证就被错误地"继承"给新代次（N7e 的根因）。
+   * 只处理"与 prior 租约绑定"的摘要：新摘要尚未入表，因此不会被误删。
+   */
+  private supersedePriorFor(key: string, priorGeneration: number, nowMs: number): void {
+    const prior = this.bySave.get(key)
+    const priorDigest = prior === undefined ? undefined : prior.tokenDigest
+    for (const [digest, digestKey] of [...this.byToken]) {
+      if (digestKey !== key) continue
+      if (digest !== priorDigest) continue
+      this.supersededTokens.set(digest, { generation: priorGeneration, sealedAtMs: nowMs })
+      this.byToken.delete(digest)
+    }
+  }
+
+  /**
+   * 回收未确认的握手租约（因超时或主动 abandon）。
+   * 封存该租约、移入 supersededTokens、从 byToken 删除；
+   * 若存在 priorSealedSnapshot 则还原槽位状态为封存态；不得回退代次或复活旧凭证。
+   */
+  reclaimUnconfirmed(
+    key: string,
+    lease: LeaseRecord,
+    reason: LeaseReclaimReason,
+    nowMs: number,
+  ): void {
+    lease.sealed = true
+    lease.state = 'stopped'
+    this.supersededTokens.set(lease.tokenDigest, {
+      generation: lease.generation,
+      sealedAtMs: nowMs,
+    })
+    this.byToken.delete(lease.tokenDigest)
+
+    if (lease.priorSealedSnapshot !== undefined) {
+      const prior = lease.priorSealedSnapshot
+      // 还原槽位状态（如 paused），但旧凭证保持在 supersededTokens 中，绝不复活！
+      this.bySave.set(key, {
+        runtimeInstanceId: prior.runtimeInstanceId,
+        generation: prior.generation,
+        gameId: lease.gameId,
+        saveId: lease.saveId,
+        expiresAt: prior.expiresAt,
+        state: prior.state,
+        sealed: true,
+        lastPersistedRevision: prior.lastPersistedRevision,
+        tokenDigest: prior.tokenDigest,
+        launchTokenDigest: prior.launchTokenDigest,
+        ackDeadline: '',
+        ttlMs: DEFAULT_TTL_MS,
+        authorizedFinalOperationId: prior.authorizedFinalOperationId,
+      })
+    }
+  }
+
+  /**
+   * 惰性 / 定时扫描未确认超时的握手租约（T_ack 超时）。
+   * 只回收处于 pending 态且超过 ackDeadline 的租约；已 running 的租约永不误回收。
+   */
+  sweepUnconfirmed(nowMs: number): LeaseRecord[] {
+    const reclaimed: LeaseRecord[] = []
+    for (const [key, lease] of this.bySave) {
+      if (lease.state === 'pending' && !lease.sealed && Date.parse(lease.ackDeadline) <= nowMs) {
+        this.reclaimUnconfirmed(key, lease, 'unconfirmed-timeout', nowMs)
+        reclaimed.push(lease)
+      }
+    }
+    return reclaimed
+  }
+
+  hasAbandoned(runtimeInstanceId: string): boolean {
+    return this.abandonedInstances.has(runtimeInstanceId)
+  }
+
+  getAbandonedDigest(runtimeInstanceId: string): string | undefined {
+    return this.abandonedInstances.get(runtimeInstanceId)
+  }
+
+  abandonRuntime(
+    runtimeInstanceId: string,
+    launchTokenDigest: string,
+    nowMs: number,
+  ): AbandonRuntimeResult {
+    this.sweepUnconfirmed(nowMs)
+    const priorDigest = this.abandonedInstances.get(runtimeInstanceId)
+    if (priorDigest !== undefined) {
+      if (priorDigest !== launchTokenDigest) {
+        return {
+          ok: false,
+          errorCode: 'ABANDON_FORBIDDEN',
+          message: 'launchToken 与运行实例不匹配。',
+        }
+      }
+      return { ok: true, abandoned: true, reclaimed: false }
+    }
+
+    // 查找匹配的租约
+    let matchedKey: string | undefined
+    let matchedLease: LeaseRecord | undefined
+    for (const [key, lease] of this.bySave) {
+      if (lease.runtimeInstanceId === runtimeInstanceId) {
+        matchedKey = key
+        matchedLease = lease
+        break
+      }
+    }
+
+    if (matchedLease !== undefined) {
+      if (matchedLease.launchTokenDigest !== launchTokenDigest) {
+        return {
+          ok: false,
+          errorCode: 'ABANDON_FORBIDDEN',
+          message: 'launchToken 与运行实例不匹配。',
+        }
+      }
+      this.abandonedInstances.set(runtimeInstanceId, launchTokenDigest)
+      if (matchedLease.sealed || matchedLease.state === 'stopped') {
+        return { ok: true, abandoned: true, reclaimed: false }
+      }
+      this.reclaimUnconfirmed(matchedKey!, matchedLease, 'abandoned', nowMs)
+      return { ok: true, abandoned: true, reclaimed: true }
+    }
+
+    // 尚未握手到达（快路径先到）：记录毒丸，迟到握手到达时直接拒绝
+    this.abandonedInstances.set(runtimeInstanceId, launchTokenDigest)
+    return { ok: true, abandoned: true, reclaimed: false }
   }
 
   get(gameId: string, saveId: string): LeaseRecord | undefined {
@@ -262,11 +463,19 @@ export class LeaseRegistry {
     tokenDigest: unknown,
     nowMs: number,
   ): { ok: true; lease: LeaseRecord } | LeaseViolation {
+    this.sweepUnconfirmed(nowMs)
     if (typeof tokenDigest !== 'string' || tokenDigest.length === 0) {
       return violation('PROTOCOL_INVALID', '缺少运行凭证。', { reason: 'credential-missing' })
     }
     const key = this.byToken.get(tokenDigest)
     if (key === undefined) {
+      const superseded = this.supersededTokens.get(tokenDigest)
+      if (superseded !== undefined) {
+        return violation('STALE_RUNTIME', '该运行凭证所属代次已被新实例取代，拒绝写入。', {
+          reason: 'token-superseded',
+          generation: superseded.generation,
+        })
+      }
       return violation('PROTOCOL_INVALID', '运行凭证无效或不属于本宿主。', { reason: 'credential-invalid' })
     }
     const lease = this.bySave.get(key)
@@ -280,6 +489,17 @@ export class LeaseRegistry {
         state: lease.state,
         generation: lease.generation,
       })
+    }
+    if (lease.state === 'pending') {
+      if (Date.parse(lease.ackDeadline) <= nowMs) {
+        this.reclaimUnconfirmed(key, lease, 'unconfirmed-timeout', nowMs)
+        return violation('STALE_RUNTIME', '未确认租约已超时回收。', {
+          reason: 'unconfirmed-timeout',
+        })
+      }
+      // 首次携带该 runtimeToken 的确认调用到达：成功转为 running！
+      lease.state = 'running'
+      lease.expiresAt = isoFrom(nowMs + lease.ttlMs)
     }
     if (Date.parse(lease.expiresAt) <= nowMs) {
       return violation('PAUSED', '控制租约已过期，需重新获取控制权。', {
@@ -381,6 +601,7 @@ export class LeaseRegistry {
       return violation('PROTOCOL_INVALID', `状态 ${lease.state} 不能进入暂停。`, { state: lease.state })
     }
     lease.state = 'pausing'
+    lease.authorizedFinalOperationId = undefined
     return { ok: true }
   }
 
@@ -410,8 +631,8 @@ export class LeaseRegistry {
     if (!Number.isInteger(revision) || revision < 1) {
       return violation('PROTOCOL_INVALID', '保存 revision 必须是正整数。', { revision })
     }
-    if (revision <= lease.lastPersistedRevision) {
-      return violation('PROTOCOL_INVALID', 'revision 必须大于最近已持久化版本。', {
+    if (revision < lease.lastPersistedRevision) {
+      return violation('PROTOCOL_INVALID', 'revision 不能小于最近已持久化版本。', {
         revision,
         last: lease.lastPersistedRevision,
       })
@@ -466,7 +687,8 @@ export class LeaseRegistry {
    * 返回被清理的租约列表，供调用方写审计。**不删除**任何存档数据。
    */
   sweepExpired(nowMs: number): LeaseRecord[] {
-    const expired: LeaseRecord[] = []
+    const unconfirmed = this.sweepUnconfirmed(nowMs)
+    const expired: LeaseRecord[] = [...unconfirmed]
     for (const [key, lease] of this.bySave) {
       if (lease.sealed) continue
       if (lease.state === 'running' && Date.parse(lease.expiresAt) <= nowMs) {
@@ -475,10 +697,9 @@ export class LeaseRegistry {
         expired.push(lease)
         continue
       }
-      // pending 且从未握手就过期的实例：直接停止，不产生"可恢复"误导。
+      // pending 且从未确认就过期的实例：直接回收停止，不产生"可恢复"误导。
       if (lease.state === 'pending' && Date.parse(lease.expiresAt) <= nowMs) {
-        lease.state = 'stopped'
-        lease.sealed = true
+        this.reclaimUnconfirmed(key, lease, 'unconfirmed-timeout', nowMs)
         expired.push(lease)
         continue
       }

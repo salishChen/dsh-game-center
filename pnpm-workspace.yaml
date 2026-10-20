@@ -1,2 +1,4 @@
 packages:
   - 'packages/*'
+  # 阶段1 端到端集成测试（跨包聚合，不发布）
+  - 'tests/*'

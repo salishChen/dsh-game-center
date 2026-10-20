@@ -35,7 +35,7 @@ import {
   PAUSE_TIMEOUT_MS,
   requestPause as requestPauseLease,
 } from './runtime/lease.js';
-import { createNonce } from './bridge/host-bridge.js';
+import { createNonce, createLaunchToken } from './bridge/host-bridge.js';
 import { mountGameCenterRemote, createGameCenterClient } from './bridge/remote-mount.js';
 import { runRemoteDiagnostics } from './bridge/diagnostics.js';
 
@@ -181,11 +181,17 @@ export function apply(ctx) {
 
   /**
    * 创建一个新的运行实例登记（阶段1 由 Bridge 握手真正驱动）。
-   * @param {{gameId: string, saveId: string}} args
+   *
+   * `runtimeInstanceId` 可选：由弹层在握手时生成并传给 Host，这里复用同一个值，
+   * 否则本地租约与 Host 租约记录的是两个不同的运行实例 ID（诊断与审计会对不上）。
+   * @param {{gameId: string, saveId: string, runtimeInstanceId?: string}} args
    * @returns {import('./runtime/lease.js').RuntimeLease}
    */
-  const beginRuntime = ({ gameId, saveId }) => {
-    const runtimeInstanceId = `rt-${createNonce().slice(0, 16)}`;
+  const beginRuntime = ({ gameId, saveId, runtimeInstanceId: handedInstanceId }) => {
+    const runtimeInstanceId =
+      typeof handedInstanceId === 'string' && handedInstanceId.length > 0
+        ? handedInstanceId
+        : `rt-${createNonce().slice(0, 16)}`;
     lease = createRuntimeLease({ gameId, saveId, runtimeInstanceId, nonce: createNonce() });
     return lease;
   };
@@ -290,10 +296,13 @@ export function apply(ctx) {
           overlay,
           t,
           requestPause,
+          beginRuntime,
+          onSaveAck,
           onClosed: () => overlay.set(false),
           remoteState,
           getService,
           makeNonce: createNonce,
+          makeLaunchToken: createLaunchToken,
           runDiagnostics: runRemoteDiagnostics,
         }),
       },

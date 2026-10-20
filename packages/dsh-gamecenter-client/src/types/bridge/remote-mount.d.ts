@@ -55,6 +55,7 @@ export function mountGameCenterRemote(ctx: any, options?: {
  * | `saveAck` | `{accepted:true, state?, lastPersistedRevision?}` | `{accepted:false, error:{code,message}, …}` |
  * | `pause` | `{accepted:true, state?, timeoutMs}` | `{accepted:false, timeoutMs, error:{code,message}}` |
  * | `leaseStatus` | `{state, generation, expiresAt, lastPersistedRevision}` | `{absent:true}`（不是失败） |
+ * | `abandonRuntime` | `{ok:true, abandoned:true, reclaimed}` | `{ok:false, errorCode, message}`（复用 handshake 风格） |
  *
  * 早期实现只判 `result.ok === false` 并读 `result.error?.code`，造成两个真实后果：
  * 1. `handshake` 的失败码丢失 —— Host 用 `errorCode`，代码读 `error.code`，一律成 `UNKNOWN`；
@@ -75,7 +76,7 @@ export function remoteFailureOf(result: any): {
  * 五个方法的 Client 侧包装：把 Host 的失败形状统一成抛异常，或返回原始结果。
  *
  * @param {any} remoteService `ctx.remote.gameCenter`（挂载成功后才有）
- * @returns {{handshake: Function, pause: Function, saveAck: Function, leaseStatus: Function, modelCatalog: Function}}
+ * @returns {{handshake: Function, pause: Function, saveAck: Function, leaseStatus: Function, modelCatalog: Function, catalogList: Function, catalogInstall: Function, gameBundle: Function, saveLatest: Function, saveCheckpoint: Function, previewList: Function, previewBundle: Function, abandonRuntime: Function}}
  */
 export function createGameCenterClient(remoteService: any): {
     handshake: Function;
@@ -83,6 +84,14 @@ export function createGameCenterClient(remoteService: any): {
     saveAck: Function;
     leaseStatus: Function;
     modelCatalog: Function;
+    catalogList: Function;
+    catalogInstall: Function;
+    gameBundle: Function;
+    saveLatest: Function;
+    saveCheckpoint: Function;
+    previewList: Function;
+    previewBundle: Function;
+    abandonRuntime: Function;
 };
 /**
  * Client 侧 `gameCenter` Remote 挂载（方案 (b)）。

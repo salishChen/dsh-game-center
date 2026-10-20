@@ -29,3 +29,8 @@ probe-out/
 packages/protocol/src/**/*.js
 packages/protocol/src/**/*.js.map
 packages/protocol/src/**/*.d.ts
+
+# 架构侧临时产物与内部证据快照（含本机路径，不入库）
+.tmp-composed.json
+artifacts/
+docs/phase1-candidate-manifest*.txt

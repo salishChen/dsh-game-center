@@ -1234,5 +1234,28 @@ PM 裁决：跨存档按 generation 全局定位/凭证不校验属阶段0 阻�
 - 部署动作已完成，但当前运行的 DSH 进程仍运行旧内存，**严禁自行重启或刷新**；
 - 已直接通知 QA 进行独立复核，复核确认后由 PM 统一提示用户进行正常 GUI 重启。
 
+## 18. 阶段1 P3 存档存储事务层（SaveStore）实现与交付（2026-10-19 18:45）
+
+按阶段1 计划 `docs/phase1-plan.md` §3/§5 中 P3 与 A5 的验收要求，完成 Host 侧存档事务与校验层实现：
+
+### 18.1 核心实现结构（`packages/dsh-gamecenter/src/storage/save-store.ts`）
+1. **权威结构对齐**：以 `@dsh-gamecenter/protocol` 的 `GameSaveV1` 为唯一事实来源，包含 `Assert<T extends true>` 编译期双向类型强约束，杜绝本地字段漂移。
+2. **严格单调递增与并发排队锁**：
+   - 内部维护 `revisionTracker` 与单存档队列串行锁 `writeQueues`；
+   - 每次写入 checkpoint 严格自增（`nextRev = currentRev + 1`），防止并发覆盖。
+3. **租约与生命周期守卫**：
+   - `writeCheckpoint` 强校验：实例已封存（`isSealed === true`）或运行代次陈旧（`generation < activeGeneration`）一律拒绝为 `STALE_RUNTIME`。
+4. **规范化 JSON 与完整性防篡改**：
+   - 实现 `canonicalJsonStringify` 进行属性字母序规范化序列化；
+   - `computeSaveIntegrityDigest` 对排除自身外的所有字段求取 `sha256:` 摘要并在读取时严格校验；篡改 state 触发 `PROTOCOL_INVALID`。
+5. **跨提交隔离与版本兼容**：
+   - `readCheckpoint` 调用 `checkSaveCompatibility`；跨 commit 未安装或主 schema 不兼容返回 `SAVE_INCOMPATIBLE`。
+
+### 18.2 测试与工作流证据
+- 新增单元测试文件：`packages/dsh-gamecenter/test/save-transaction.test.mjs`（7 项针对性用例全部真实通过，覆盖写读、revision 递增、旧代次拒写、封存拒写、防篡改、跨 commit 兼容性、并发写保护）；
+- Host 全量测试：`packages/dsh-gamecenter` **101/101 项全绿，退出码 0**；
+- 工作树内构建完成（`pnpm run build`），`lib/` 与 `src/` 代码保持同批同步，未触碰在线环境，未做任何部署。
+
+
 
 

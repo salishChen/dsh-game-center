@@ -92,6 +92,10 @@ test('runRemoteDiagnostics: 全链路正常流程测试（带 runtimeToken 鉴�
       }
       return { accepted: true, state: 'paused', lastPersistedRevision: 1 };
     },
+    async abandonRuntime(input) {
+      calls.push({ method: 'abandonRuntime', input });
+      return { ok: true, abandoned: true, reclaimed: false };
+    },
   };
 
   const rows = await runRemoteDiagnostics({
@@ -100,9 +104,9 @@ test('runRemoteDiagnostics: 全链路正常流程测试（带 runtimeToken 鉴�
     makeNonce: () => 'abcdef1234567890',
   });
 
-  // 验证共进行了 7 步检查
+  // 验证共进行了 8 步检查（第 8 步为 2026-10-20 新增的 abandonRuntime）
   const keys = rows.map((r) => r.key);
-  assert.deepEqual(keys, ['mount', 'handshake', 'catalog', 'lease', 'pause', 'staleSave', 'saveAck']);
+  assert.deepEqual(keys, ['mount', 'handshake', 'catalog', 'lease', 'pause', 'staleSave', 'saveAck', 'abandon']);
 
   // 所有探针状态均为 ok
   for (const row of rows) {
@@ -121,7 +125,27 @@ test('runRemoteDiagnostics: 全链路正常流程测试（带 runtimeToken 鉴�
   assert.ok(hsCall && lsCall && pauseCall && saveCall && staleSaveCall);
   assert.equal(hsCall.input.gameId, DIAG_GAME_ID, '探针必须使用固定 DIAG_GAME_ID');
   assert.equal(lsCall.input.gameId, DIAG_GAME_ID);
-  assert.equal(lsCall.input.saveId, hsCall.input.runtimeInstanceId);
+  assert.equal(lsCall.input.saveId, hsCall.input.saveId, '依赖租约的探针必须与握手复用同一 saveId');
+  assert.equal(hsCall.input.saveId, 'save-default', '存档槽位与运行身份分离：诊断链固定 save-default');
+  assert.notEqual(
+    hsCall.input.saveId,
+    hsCall.input.runtimeInstanceId,
+    'saveId 不得再等于 runtimeInstanceId（历史缺陷：续玩永远读不到检查点）',
+  );
+  // 协议必填：launchToken 必须在握手载荷里，且满足形状约束（>=32 位可见 ASCII）
+  assert.ok(
+    typeof hsCall.input.launchToken === 'string' && hsCall.input.launchToken.length >= 32,
+    '握手必须携带合法形状的 launchToken',
+  );
+  // 诊断链末尾必须 abandonRuntime，且与握手用同一对身份值
+  const abandonCall = calls.find((c) => c.method === 'abandonRuntime');
+  assert.ok(abandonCall, '诊断链末尾必须调用 abandonRuntime');
+  assert.equal(abandonCall.input.launchToken, hsCall.input.launchToken, 'abandonRuntime 必须用同一个 launchToken');
+  assert.equal(
+    abandonCall.input.runtimeInstanceId,
+    hsCall.input.runtimeInstanceId,
+    'abandonRuntime 必须用同一个 runtimeInstanceId',
+  );
 
   // 验证所有鉴权调用均正确携带了 handshake 下发的 runtimeToken
   assert.equal(lsCall.input.runtimeToken, 'token-secret-123456');

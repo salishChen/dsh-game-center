@@ -26,9 +26,18 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: 0.2.1-rc.2
         version: 0.2.1-rc.2(@deepseek-ai/cordis@4.0.5)
+      '@dsh-gamecenter/catalog':
+        specifier: workspace:*
+        version: link:../dsh-gamecenter-catalog
       '@dsh-gamecenter/client':
         specifier: workspace:*
         version: link:../dsh-gamecenter-client
+      '@dsh-gamecenter/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
+  packages/dsh-gamecenter-catalog:
+    dependencies:
       '@dsh-gamecenter/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -40,6 +49,15 @@ importers:
         version: 0.28.2
 
   packages/protocol: {}
+
+  tests/integration:
+    devDependencies:
+      '@dsh-gamecenter/catalog':
+        specifier: workspace:*
+        version: link:../../packages/dsh-gamecenter-catalog
+      '@dsh-gamecenter/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
 
 packages:
 

@@ -136,7 +136,7 @@ export function createRateLimiter(options = {}) {
  * @property {1} bridgeVersion
  * @property {string} requestId
  * @property {false} ok
- * @property {{code: string, message: string, retryable: boolean}} error
+ * @property {{code: string, message: string, retryable: boolean, currentRevision?: number}} error
  */
 
 /**
@@ -198,15 +198,23 @@ export function parseInbound(raw) {
  * 构造出站错误信封（游戏可安全读取：不含凭据、不含栈、不含内部路径）。
  *
  * @param {string} requestId
- * @param {{code: string, message: string, retryable?: boolean}} error
+ * @param {{code: string, message: string, retryable?: boolean, currentRevision?: number}} error
  * @returns {OutboundErrorEnvelope}
  */
 export function outboundError(requestId, error) {
+  const errPayload = {
+    code: error.code,
+    message: error.message,
+    retryable: error.retryable ?? false,
+  };
+  if (typeof error.currentRevision === 'number') {
+    /** @type {any} */ (errPayload).currentRevision = error.currentRevision;
+  }
   return {
     bridgeVersion: 1,
     requestId,
     ok: false,
-    error: { code: error.code, message: error.message, retryable: error.retryable ?? false },
+    error: errPayload,
   };
 }
 
@@ -222,16 +230,64 @@ export function outboundOk(requestId, payload) {
 }
 
 /**
+ * 取 CSPRNG 的 `getRandomValues`，没有就直接抛错。
+ *
+ * 【为什么不再回退 `Math.random()`】nonce 是 iframe 握手配对的一次性凭证依据，
+ * launchToken 是 `abandonRuntime` 的调用者身份依据——两者都要求不可猜。
+ * `Math.random()` 可被预测，静默降级会让这两道校验同时失效。
+ * DSH 是 Electron（必有 webcrypto），浏览器也普遍可用，所以这条分支实际不可达；
+ * 与其留一个"哪天变成静默降级"的兜底，不如让它显式失败。
+ *
+ * @returns {(array: Uint8Array) => Uint8Array}
+ */
+function requireGetRandomValues() {
+  const getRandomValues = globalThis.crypto?.getRandomValues;
+  if (typeof getRandomValues !== 'function') {
+    throw new Error('运行时缺少 CSPRNG（crypto.getRandomValues），无法生成不可猜的随机值');
+  }
+  return (array) => {
+    getRandomValues.call(globalThis.crypto, array);
+    return array;
+  };
+}
+
+/**
  * 生成一次性 nonce（浏览器与测试都可用）。
  * @returns {string} 48 位十六进制字符串
  */
 export function createNonce() {
-  const bytes = new Uint8Array(24);
-  if (typeof globalThis.crypto?.getRandomValues === 'function') {
-    globalThis.crypto.getRandomValues(bytes);
-  } else {
-    for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  const bytes = requireGetRandomValues()(new Uint8Array(24));
+  let out = '';
+  for (const b of bytes) out += b.toString(16).padStart(2, '0');
+  return out;
+}
+
+/**
+ * 生成本次启动的 `launchToken`（协议 2026-10-20 冻结，`abandonRuntime` 必填入参）。
+ *
+ * 【为什么与 `createNonce()` 分开】两者都走同一个 CSPRNG 守卫，但用途与形状不同：
+ * nonce 是 iframe 握手配对的一次性凭证依据；launchToken 是"我是这次启动的发起者"
+ * 的身份依据，`abandonRuntime` 靠它做交叉校验——可猜就意味着别人能撤销我们的实例。
+ * 无 CSPRNG 时两者都直接抛错，绝不静默降级到 `Math.random()`。
+ *
+ * 形状约束来自协议 `isLaunchTokenShapeValid()`：32~256 位**可见 ASCII**、无空白与控制字符。
+ * 32 字节转 base64url 得 43 字符（只含 A-Za-z0-9-_），天然满足。
+ *
+ * 隔离纪律（与 `runtimeToken` 同级）：只在本 Client 进程内存中持有，
+ * **绝不**进入游戏 iframe 的 URL/srcdoc、不进日志、不进 UI 文案、不进错误 message。
+ *
+ * @returns {string} 43 位 base64url 字符串（32 字节熵）
+ * @throws {Error} 当运行时没有 CSPRNG（`crypto.getRandomValues`）时
+ */
+export function createLaunchToken() {
+  const getRandomValues = requireGetRandomValues();
+  const bytes = getRandomValues(new Uint8Array(32));
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  if (typeof globalThis.btoa === 'function') {
+    return globalThis.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
+  // 无 btoa 的环境（极少见）：退回十六进制，仍满足 32~256 位可见 ASCII 的形状约束。
   let out = '';
   for (const b of bytes) out += b.toString(16).padStart(2, '0');
   return out;

@@ -22,10 +22,19 @@
  * - 不在装载时发起任何模型调用（含 `stream()`）；`modelCatalog` 只在被调用时读目录。
  */
 
+import fs from 'node:fs'
+import path from 'node:path'
+import os from 'node:os'
 import { createHash, randomBytes } from 'node:crypto'
 
+import type { ApprovedRelease, CatalogMachineEntry } from '@dsh-gamecenter/protocol'
 import { isMinimalContext } from './dsh-adapter/context.ts'
-import { GameCenterCore, defineGameCenterService, type GameCenterHostContext } from './remote/game-center-service.ts'
+import { GameCenterCore, defineGameCenterService, type GameCenterHostContext, type GameCenterService } from './remote/game-center-service.ts'
+import { SaveStore, type SaveStorageBackend, MemorySaveBackend } from './storage/save-store.ts'
+import { SqliteSaveBackend, type SqliteSaveBackendOptions } from './storage/sqlite-save-backend.ts'
+
+export * from './storage/save-store.ts'
+export * from './storage/sqlite-save-backend.ts'
 
 /**
  * ## 为什么这里**没有** `import '@dsh-gamecenter/client'`（曾加过，已移除）
@@ -57,23 +66,95 @@ import { GameCenterCore, defineGameCenterService, type GameCenterHostContext } f
 /** Cordis 注入声明：只读模型目录需要 `llm`。 */
 export const inject: readonly string[] = ['llm']
 
+/** 握手未确认扫描间隔（默认 1000ms；与 LEASE_ACK_WINDOW_MS 3000ms 构成 4000ms 硬上界）。 */
+export const SCAN_INTERVAL_MS = 1000
+
 export interface HostPluginOptions {
+  /** 显式绝对数据目录路径；必须为绝对路径，未提供且无 storageBackend 时显式抛错拒绝启动 */
+  dataDir?: string | undefined
+  /** 受信宿主 playerId；缺失或非法时显式抛错拒绝启动 */
+  playerId?: string | undefined
+  /** 游戏安装目录；缺省位于 dataDir/games */
+  gameLibraryDir?: string | undefined
+  /** 预览目录路径 */
+  previewDir?: string | undefined
+  /** 已审批发布列表 */
+  approvals?: readonly ApprovedRelease[] | undefined
+  /** 目录模式，默认 'fixture' */
+  catalogMode?: ('github' | 'fixture') | undefined
+  /** 目录 fixture 列表 */
+  catalogFixtureEntries?: readonly CatalogMachineEntry[] | undefined
   /** 租约 TTL 毫秒。 */
-  ttlMs?: number
+  ttlMs?: number | undefined
+  /** 自定义存储后端（测试/对账注入用） */
+  storageBackend?: SaveStorageBackend | undefined
+  /** 握手未确认租约扫描周期毫秒，默认 1000ms（SCAN_INTERVAL_MS）。 */
+  scanIntervalMs?: number | undefined
+  /** 时间注入函数（测试/对账使用）。 */
+  nowMs?: (() => number) | undefined
 }
 
 export interface HostPluginApi {
   readonly core: GameCenterCore
+  readonly saveStore: SaveStore
+  readonly service: GameCenterService
+  readonly playerId: string
+  readonly dataDir?: string | undefined
+  readonly gameLibraryDir: string
   /** 是否成功实例化 Remote 服务。 */
   readonly remoteMounted: boolean
+  readonly scanIntervalMs: number
   readonly dispose: () => void
+}
+
+/**
+ * 受信宿主 playerId 安全解析。
+ *
+ * 规则（PM 2026-10-20 硬要求）：
+ * 1. 优先从 options.playerId 获取；
+ * 2. 其次从宿主上下文 ctx 获取（如 ctx.playerId 或 ctx.user?.id）；
+ * 3. 缺失或包含路径穿越字符（'..', '/', '\'）坚决抛错拒启，严禁静默回退 default-player。
+ */
+export function resolvePlayerId(ctx: unknown, options: HostPluginOptions = {}): string {
+  const candidate = options.playerId
+
+  if (!candidate || typeof candidate !== 'string' || candidate.trim().length === 0) {
+    throw new TypeError('@dsh-gamecenter/host: 缺少必要配置 options.playerId（无法解析受信宿主 playerId，未显式配置），拒绝启动')
+  }
+
+  const trimmed = candidate.trim()
+  if (!/^[A-Za-z0-9._:-]{1,128}$/.test(trimmed) || trimmed.includes('..') || trimmed.includes('/') || trimmed.includes('\\')) {
+    throw new TypeError(`@dsh-gamecenter/host: 解析到的 playerId 非法或包含路径穿越字符: '${trimmed}'`)
+  }
+
+  return trimmed
+}
+
+/**
+ * 宿主数据目录安全解析。
+ *
+ * 规则（PM 2026-10-20 硬要求）：
+ * 1. 必须由 options.dataDir 显式配置绝对路径；
+ * 2. 缺失或非绝对路径显式抛错拒绝启动；
+ * 3. 禁止未核实环境变量盲目猜测真实 profile 路径，禁止落入 cwd。
+ */
+export function resolveDataDir(options: HostPluginOptions = {}): string {
+  const dir = options.dataDir
+  if (!dir || typeof dir !== 'string' || dir.trim().length === 0) {
+    throw new TypeError('@dsh-gamecenter/host: 缺少必要配置 options.dataDir（必须为绝对路径），未配置可靠数据目录时禁止启动')
+  }
+  const trimmed = dir.trim()
+  if (!path.isAbsolute(trimmed)) {
+    throw new TypeError(`@dsh-gamecenter/host: options.dataDir 必须为绝对路径，收到: '${dir}'`)
+  }
+  return path.resolve(trimmed)
 }
 
 /**
  * 运行凭证摘要（**密码学摘要**）。
  *
  * 历史：早期是 `noncrypto-fnv1a64`（无依赖、仅用于"不存原文"）。现在凭证成为
- * **身份认证依据**（`pause`/`saveAck`/`leaseStatus` 靠它定位租约），
+ * **身份认证依据**（`pause`/`saveAck`/`leaseStatus`/`saveCheckpoint` 靠它定位租约），
  * 非密码学摘要在攻击者可控输入下可被碰撞/预映像，**不足以承担认证**，
  * 因此改用 `node:crypto` 的 SHA-256。
  * 只存摘要、不存原文；原文仅在握手响应里下发一次给 Client Bridge。
@@ -98,27 +179,86 @@ export function apply(ctx: unknown, options: HostPluginOptions = {}): HostPlugin
     throw new TypeError('@dsh-gamecenter/host: apply() 需要 Cordis Context（缺少 effect）')
   }
 
+  // 1. 受信身份校验（未注入直接抛错拒绝启动）
+  const playerId = resolvePlayerId(ctx, options)
+
+  // 2. 存储后端与游戏目录解析
+  let saveStore: SaveStore
+  let gameLibraryDir: string
+  let dataDir: string | undefined
+
+  if (options.storageBackend) {
+    saveStore = new SaveStore(options.storageBackend)
+    gameLibraryDir = options.gameLibraryDir ?? (options.dataDir ? path.join(path.resolve(options.dataDir), 'games') : path.join(os.tmpdir(), 'dsh-games-test'))
+  } else {
+    dataDir = resolveDataDir(options)
+    fs.mkdirSync(dataDir, { recursive: true })
+    gameLibraryDir = options.gameLibraryDir ?? path.join(dataDir, 'games')
+    fs.mkdirSync(gameLibraryDir, { recursive: true })
+    const sqliteBackend = new SqliteSaveBackend({
+      dbPath: path.join(dataDir, 'gamecenter.sqlite'),
+    })
+    saveStore = new SaveStore(sqliteBackend)
+  }
+
   const core = new GameCenterCore({
-    nowMs: () => Date.now(),
+    nowMs: options.nowMs ?? (() => Date.now()),
     digestToken,
     createToken,
     ...(options.ttlMs === undefined ? {} : { ttlMs: options.ttlMs }),
   })
 
   const hostCtx = ctx as GameCenterHostContext
-  const service = defineGameCenterService(core, hostCtx)
+  const service = defineGameCenterService(core, hostCtx, {
+    playerId,
+    saveStore,
+    gameLibraryDir,
+    previewDir: options.previewDir,
+    approvals: options.approvals,
+    catalogMode: options.catalogMode,
+    catalogFixtureEntries: options.catalogFixtureEntries,
+  })
 
+  const scanIntervalMs = options.scanIntervalMs ?? SCAN_INTERVAL_MS
+  let timer: ReturnType<typeof setInterval> | undefined
   let disposed = false
+
   ctx.effect(() => {
+    timer = setInterval(() => {
+      try {
+        core.sweepUnconfirmed()
+      } catch (e) {
+        console.warn('@dsh-gamecenter/host: sweepUnconfirmed failed:', e)
+      }
+    }, scanIntervalMs)
+    if (typeof timer === 'object' && timer !== null && 'unref' in timer) {
+      const maybeTimer = timer as { unref?: () => void }
+      maybeTimer.unref?.()
+    }
+
     return () => {
+      if (timer !== undefined) {
+        clearInterval(timer)
+        timer = undefined
+      }
       disposed = true
     }
   }, 'gamecenter: host service lifetime')
 
   return {
     core,
+    saveStore,
+    service,
+    playerId,
+    dataDir,
+    gameLibraryDir,
     remoteMounted: service !== null,
+    scanIntervalMs,
     dispose: () => {
+      if (timer !== undefined) {
+        clearInterval(timer)
+        timer = undefined
+      }
       disposed = true
     },
   }

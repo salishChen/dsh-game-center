@@ -12,7 +12,17 @@ import {
   BRIDGE_MAX_MESSAGE_BYTES as CLIENT_MAX_BYTES,
   utf8ByteLength as clientUtf8ByteLength,
 } from '../src/bridge/host-bridge.js';
-import { BRIDGE_METHODS as PROTOCOL_METHODS, BRIDGE_MAX_MESSAGE_BYTES as PROTOCOL_MAX_BYTES, utf8ByteLength as protocolUtf8ByteLength } from '../../protocol/dist/index.js';
+import {
+  GAME_IFRAME_SANDBOX as CLIENT_SANDBOX,
+  GAME_DOCUMENT_CSP as CLIENT_CSP,
+} from '../src/runtime/assembler.js';
+import {
+  BRIDGE_METHODS as PROTOCOL_METHODS,
+  BRIDGE_MAX_MESSAGE_BYTES as PROTOCOL_MAX_BYTES,
+  utf8ByteLength as protocolUtf8ByteLength,
+  GAME_IFRAME_SANDBOX as PROTOCOL_SANDBOX,
+  GAME_DOCUMENT_CSP as PROTOCOL_CSP,
+} from '../../protocol/dist/index.js';
 
 test('Bridge 方法白名单与协议包同源（顺序也一致）', () => {
   assert.deepEqual([...CLIENT_METHODS], [...PROTOCOL_METHODS]);
@@ -26,4 +36,9 @@ test('UTF-8 字节数计算与协议包一致（含中文与 emoji）', () => {
   for (const sample of ['', 'abc', '游戏中心', '🎮 小游戏', 'a\u0000b']) {
     assert.equal(clientUtf8ByteLength(sample), protocolUtf8ByteLength(sample), `差异化样本: ${sample}`);
   }
+});
+
+test('沙箱与 CSP 策略常量与协议包同源', () => {
+  assert.equal(CLIENT_SANDBOX, PROTOCOL_SANDBOX);
+  assert.equal(CLIENT_CSP, PROTOCOL_CSP);
 });

@@ -76,8 +76,20 @@ export const MOUNT_ERRORS = Object.freeze({
  * @property {WireDescriptor[]} descriptors
  */
 
-/** Host 侧五个方法的 wire 形参名（必须与 Host 形参逐一对应）。 */
-const METHODS_WITH_INPUT = ['handshake', 'pause', 'saveAck', 'leaseStatus'];
+/** Host 侧具有 wire 入参的方法清单（必须与 Host 形参逐一对应）。 */
+const METHODS_WITH_INPUT = [
+  'handshake',
+  'pause',
+  'saveAck',
+  'leaseStatus',
+  'catalogList',
+  'catalogInstall',
+  'gameBundle',
+  'saveLatest',
+  'saveCheckpoint',
+  'previewBundle',
+  'abandonRuntime',
+];
 
 /**
  * 本包贡献者的身份键，用作 invocation id 前缀与 `service` 字段。
@@ -144,6 +156,17 @@ export function createGameCenterContribution() {
     parameters: [],
     result: strictCodec('modelCatalog.result'),
     cancellation: { parameter: 'signal' },
+  });
+
+  // previewList 无业务参数
+  descriptors.push({
+    id: '@dsh-gamecenter/client#gameCenter.previewList',
+    service: SERVICE_KEY,
+    namespace: 'gameCenter',
+    method: 'previewList',
+    invocation: { kind: 'direct' },
+    parameters: [],
+    result: strictCodec('previewList.result'),
   });
 
   return { package: '@dsh-gamecenter/client', descriptors };
@@ -362,6 +385,7 @@ export async function mountGameCenterRemote(ctx, options = {}) {
  * | `saveAck` | `{accepted:true, state?, lastPersistedRevision?}` | `{accepted:false, error:{code,message}, …}` |
  * | `pause` | `{accepted:true, state?, timeoutMs}` | `{accepted:false, timeoutMs, error:{code,message}}` |
  * | `leaseStatus` | `{state, generation, expiresAt, lastPersistedRevision}` | `{absent:true}`（不是失败） |
+ * | `abandonRuntime` | `{ok:true, abandoned:true, reclaimed}` | `{ok:false, errorCode, message}`（复用 handshake 风格） |
  *
  * 早期实现只判 `result.ok === false` 并读 `result.error?.code`，造成两个真实后果：
  * 1. `handshake` 的失败码丢失 —— Host 用 `errorCode`，代码读 `error.code`，一律成 `UNKNOWN`；
@@ -413,7 +437,7 @@ export function remoteFailureOf(result) {
  * 五个方法的 Client 侧包装：把 Host 的失败形状统一成抛异常，或返回原始结果。
  *
  * @param {any} remoteService `ctx.remote.gameCenter`（挂载成功后才有）
- * @returns {{handshake: Function, pause: Function, saveAck: Function, leaseStatus: Function, modelCatalog: Function}}
+ * @returns {{handshake: Function, pause: Function, saveAck: Function, leaseStatus: Function, modelCatalog: Function, catalogList: Function, catalogInstall: Function, gameBundle: Function, saveLatest: Function, saveCheckpoint: Function, previewList: Function, previewBundle: Function, abandonRuntime: Function}}
  */
 export function createGameCenterClient(remoteService) {
   /**
@@ -473,5 +497,26 @@ export function createGameCenterClient(remoteService) {
     leaseStatus: (input) => call('leaseStatus', [input]),
     /** @returns {Promise<any>} */
     modelCatalog: () => call('modelCatalog', []),
+    /** @param {any} [input] @returns {Promise<any>} */
+    catalogList: (input) => call('catalogList', [input ?? {}]),
+    /** @param {any} input @returns {Promise<any>} */
+    catalogInstall: (input) => call('catalogInstall', [input]),
+    /** @param {any} input @returns {Promise<any>} */
+    gameBundle: (input) => call('gameBundle', [input]),
+    /** @param {any} input @returns {Promise<any>} */
+    saveLatest: (input) => call('saveLatest', [input]),
+    /** @param {any} input @returns {Promise<any>} */
+    saveCheckpoint: (input) => call('saveCheckpoint', [input]),
+    /** @returns {Promise<any>} */
+    previewList: () => call('previewList', []),
+    /** @param {any} input @returns {Promise<any>} */
+    previewBundle: (input) => call('previewBundle', [input]),
+    /**
+     * 放弃一次启动（协议 2026-10-20 冻结的第 13 条方法）。
+     * 入参必须同时带 launchToken 与 runtimeInstanceId；Host 交叉校验调用者身份。
+     * 重复调用必须安全（Host 侧幂等），失败只 warn 不得阻塞关闭。
+     * @param {{launchToken: string, runtimeInstanceId: string}} input @returns {Promise<any>}
+     */
+    abandonRuntime: (input) => call('abandonRuntime', [input]),
   };
 }

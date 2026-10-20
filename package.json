@@ -6,12 +6,15 @@
   "type": "module",
   "packageManager": "pnpm@11.21.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=24.0.0 <25"
   },
   "scripts": {
     "build": "pnpm --filter @dsh-gamecenter/protocol run build && pnpm -r --filter=!@dsh-gamecenter/protocol --if-present run build",
     "typecheck": "pnpm --filter @dsh-gamecenter/protocol run typecheck && pnpm -r --filter=!@dsh-gamecenter/protocol --if-present run typecheck",
-    "test": "pnpm --filter @dsh-gamecenter/protocol run build && pnpm -r --filter=!@dsh-gamecenter/protocol --if-present run test"
+    "test": "pnpm --filter @dsh-gamecenter/protocol run test && pnpm -r --filter=!@dsh-gamecenter/protocol --if-present run test",
+    "test:unit": "pnpm --filter @dsh-gamecenter/protocol run test && pnpm --filter @dsh-gamecenter/catalog run test && pnpm --filter @dsh-gamecenter/host run test && pnpm --filter @dsh-gamecenter/client run test",
+    "build:staging": "pnpm --filter @dsh-gamecenter/protocol run build && pnpm -C packages/dsh-gamecenter exec tsc -p tsconfig.staging.json",
+    "test:integration": "pnpm run build:staging && pnpm --filter @dsh-gamecenter/catalog run build && pnpm -C tests/integration test"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.5",

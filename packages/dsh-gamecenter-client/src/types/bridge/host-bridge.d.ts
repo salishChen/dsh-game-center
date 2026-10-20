@@ -57,7 +57,7 @@ export function createRateLimiter(options?: {
  * @property {1} bridgeVersion
  * @property {string} requestId
  * @property {false} ok
- * @property {{code: string, message: string, retryable: boolean}} error
+ * @property {{code: string, message: string, retryable: boolean, currentRevision?: number}} error
  */
 /**
  * 出站成功信封。
@@ -88,13 +88,14 @@ export function parseInbound(raw: unknown): {
  * 构造出站错误信封（游戏可安全读取：不含凭据、不含栈、不含内部路径）。
  *
  * @param {string} requestId
- * @param {{code: string, message: string, retryable?: boolean}} error
+ * @param {{code: string, message: string, retryable?: boolean, currentRevision?: number}} error
  * @returns {OutboundErrorEnvelope}
  */
 export function outboundError(requestId: string, error: {
     code: string;
     message: string;
     retryable?: boolean;
+    currentRevision?: number;
 }): OutboundErrorEnvelope;
 /**
  * 构造出站成功信封。payload 必须已是 JSON。
@@ -109,6 +110,24 @@ export function outboundOk(requestId: string, payload: JsonValueLike): OutboundO
  * @returns {string} 48 位十六进制字符串
  */
 export function createNonce(): string;
+/**
+ * 生成本次启动的 `launchToken`（协议 2026-10-20 冻结，`abandonRuntime` 必填入参）。
+ *
+ * 【为什么与 `createNonce()` 分开】两者都走同一个 CSPRNG 守卫，但用途与形状不同：
+ * nonce 是 iframe 握手配对的一次性凭证依据；launchToken 是"我是这次启动的发起者"
+ * 的身份依据，`abandonRuntime` 靠它做交叉校验——可猜就意味着别人能撤销我们的实例。
+ * 无 CSPRNG 时两者都直接抛错，绝不静默降级到 `Math.random()`。
+ *
+ * 形状约束来自协议 `isLaunchTokenShapeValid()`：32~256 位**可见 ASCII**、无空白与控制字符。
+ * 32 字节转 base64url 得 43 字符（只含 A-Za-z0-9-_），天然满足。
+ *
+ * 隔离纪律（与 `runtimeToken` 同级）：只在本 Client 进程内存中持有，
+ * **绝不**进入游戏 iframe 的 URL/srcdoc、不进日志、不进 UI 文案、不进错误 message。
+ *
+ * @returns {string} 43 位 base64url 字符串（32 字节熵）
+ * @throws {Error} 当运行时没有 CSPRNG（`crypto.getRandomValues`）时
+ */
+export function createLaunchToken(): string;
 /**
  * 专用 MessagePort Bridge 的**Host 侧**（父窗口）校验器（基线 §6、§7）。
  *
@@ -186,6 +205,7 @@ export type OutboundErrorEnvelope = {
         code: string;
         message: string;
         retryable: boolean;
+        currentRevision?: number;
     };
 };
 /**

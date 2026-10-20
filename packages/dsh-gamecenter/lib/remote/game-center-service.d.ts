@@ -21,7 +21,7 @@
  *
  * | 方法 | 入参（wire） | 出参（JSON） |
  * | --- | --- | --- |
- * | `handshake` | `{runtimeInstanceId, nonce, gameId, gameVersion, sdkVersion, bridgeVersion}` | `{ok, generation?, runtimeToken?, tokenDigest?, state?, errorCode?, message?}` |
+ * | `handshake` | `{runtimeInstanceId, nonce, gameId, gameVersion, sdkVersion, bridgeVersion, saveId}` | `{ok, generation?, runtimeToken?, tokenDigest?, state?, errorCode?, message?}` |
  * | `saveAck` | `{runtimeToken, revision, generation?}` | `{accepted, state?, lastPersistedRevision?, error?}` |
  * | `pause` | `{runtimeToken, reason, generation?}` | `{accepted, state?, timeoutMs, error?}` |
  * | `leaseStatus` | `{runtimeToken}` | `{absent:true} \| {state, generation, expiresAt, lastPersistedRevision}` |
@@ -44,9 +44,11 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
-import { LeaseRegistry, type LeaseRecord } from '../runtime/lease.ts';
+import { LeaseRegistry, type LeaseRecord, type LeaseViolation } from '../runtime/lease.ts';
 import { type ModelCatalogResult } from '../ai/model-catalog.ts';
 import type { DshLlmLike, MinimalContext } from '../dsh-adapter/context.ts';
+import type { CatalogListWireRequest, CatalogListWireResult, CatalogInstallWireRequest, CatalogInstallWireResult, GameBundleWireRequest, GameBundleWireResult, SaveLatestWireRequest, SaveLatestWireResult, SaveCheckpointWireRequest, SaveCheckpointWireResult, PreviewListWireResult, PreviewBundleWireRequest, PreviewBundleWireResult, ApprovedRelease, CatalogMachineEntry, AbandonRuntimeRequest, AbandonRuntimeResult } from '@dsh-gamecenter/protocol';
+import { SaveStore } from '../storage/save-store.ts';
 /** 服务用到的 Host 上下文（扩展自最小 Context）。 */
 export interface GameCenterHostContext extends MinimalContext {
     /** DSH `ctx.llm`；未激活时为 undefined（只读目录会如实返回 available:false）。 */
@@ -67,10 +69,22 @@ export interface GameCenterServiceDeps {
 export interface HandshakeWireInput {
     runtimeInstanceId: string;
     nonce: string;
+    /**
+     * 启动令牌 launchToken：Client Bridge 在每次启动时生成的不可猜随机值。
+     */
+    launchToken: string;
     gameId: string;
     gameVersion: string;
     sdkVersion: string;
     bridgeVersion: number;
+    /**
+     * **必填**存档槽位（协议 `SAVE_SLOTS`：正式 `save-default`，预览 `save-preview`）。
+     *
+     * 历史：缺省时 Host 回退 `saveId = runtimeInstanceId`，导致每次运行的存档槽位都不同，
+     * Client 的"继续游戏"按固定槽位查永远 `absent`。现在缺失或形状非法即 `PROTOCOL_INVALID`，
+     * Host 不再以运行身份隐式充当存档身份。
+     */
+    saveId: string;
 }
 export interface HandshakeWireOutput {
     ok: boolean;
@@ -157,6 +171,8 @@ export declare class GameCenterCore {
     private readonly deps;
     constructor(deps: GameCenterServiceDeps);
     private get ttlMs();
+    /** 当前注入的时间（毫秒），支持测试受控时间。 */
+    nowMs(): number;
     /**
      * 统一的运行身份解析入口。
      *
@@ -164,10 +180,14 @@ export declare class GameCenterCore {
      * 「空串的 sha256」——一个合法摘要，令「凭证缺失」永远退化报成
      * 「凭证无效」。现在把存在性检查放在摘要之前，两种原因可区分。
      */
-    private resolveRuntime;
+    resolveRuntime(runtimeToken: unknown): {
+        ok: true;
+        lease: LeaseRecord;
+    } | LeaseViolation;
     handshake(input: HandshakeWireInput): HandshakeWireOutput;
-    /** 进程内代次推进：取该游戏所有存档的最大代次，避免进程内回退。 */
-    private peekGeneration;
+    /** 进程内代次推进：取该游戏该存档槽位的最大代次，避免进程内回退与不同槽位互相顶高代次。 */
+    peekGeneration(gameId: string, saveId?: string): number;
+    abandonRuntime(input: AbandonRuntimeRequest): AbandonRuntimeResult;
     saveAck(input: SaveAckWireInput): SaveAckWireOutput;
     pause(input: PauseWireInput): PauseWireOutput;
     /**
@@ -180,10 +200,24 @@ export declare class GameCenterCore {
     modelCatalog(llm: DshLlmLike | undefined, signal?: AbortSignal): Promise<ModelCatalogResult>;
     /** 供测试与审计读取内部状态（不跨 wire）。 */
     inspect(gameId?: string): LeaseRecord[];
+    /**
+     * 主动扫描并回收未确认超时的握手租约（T_ack 超时）。
+     * 仅回收处于 pending 态且超期的租约；已 running 租约永不误回收。
+     */
+    sweepUnconfirmed(nowMs?: number): LeaseRecord[];
 }
-/** 被 `@Remote` 标记的公开方法名（顺序即声明顺序）。 */
-export declare const REMOTE_METHODS: readonly ["handshake", "saveAck", "pause", "leaseStatus", "modelCatalog"];
+/** 被 `@Remote` 标记的公开方法名（完全对齐 protocol GAMECENTER_REMOTE_METHODS）。 */
+export declare const REMOTE_METHODS: readonly ["handshake", "pause", "saveAck", "leaseStatus", "modelCatalog", "catalogList", "catalogInstall", "gameBundle", "saveLatest", "saveCheckpoint", "previewList", "previewBundle", "abandonRuntime"];
 declare const Base: typeof TypertRemoteService;
+export interface GameCenterServiceOptions {
+    playerId: string;
+    saveStore: SaveStore;
+    gameLibraryDir: string;
+    previewDir?: string | undefined;
+    approvals?: readonly ApprovedRelease[] | undefined;
+    catalogMode?: ('github' | 'fixture') | undefined;
+    catalogFixtureEntries?: readonly CatalogMachineEntry[] | undefined;
+}
 /**
  * 核心方法装配为 Typert Remote 服务类。
  *
@@ -193,7 +227,14 @@ declare const Base: typeof TypertRemoteService;
 export declare class GameCenterService extends Base {
     readonly core: GameCenterCore;
     private readonly hostCtx;
-    constructor(ctx: Context, core: GameCenterCore);
+    readonly playerId: string;
+    readonly saveStore: SaveStore;
+    readonly gameLibraryDir: string;
+    readonly previewDir?: string | undefined;
+    readonly approvals: readonly ApprovedRelease[];
+    readonly catalogMode: 'github' | 'fixture';
+    readonly catalogFixtureEntries: readonly CatalogMachineEntry[];
+    constructor(ctx: Context, core: GameCenterCore, options: GameCenterServiceOptions);
     handshake(input: HandshakeWireInput): HandshakeWireOutput;
     saveAck(input: SaveAckWireInput): SaveAckWireOutput;
     pause(input: PauseWireInput): PauseWireOutput;
@@ -203,10 +244,18 @@ export declare class GameCenterService extends Base {
      * **不是 wire 参数**（api-gateway README「支持取消的 Remote 方法」）。
      */
     modelCatalog(signal: AbortSignal): Promise<ModelCatalogResult>;
+    catalogList(input?: CatalogListWireRequest): Promise<CatalogListWireResult>;
+    catalogInstall(input: CatalogInstallWireRequest): Promise<CatalogInstallWireResult>;
+    gameBundle(input: GameBundleWireRequest): Promise<GameBundleWireResult>;
+    saveLatest(input: SaveLatestWireRequest): Promise<SaveLatestWireResult>;
+    saveCheckpoint(input: SaveCheckpointWireRequest): Promise<SaveCheckpointWireResult>;
+    previewList(): Promise<PreviewListWireResult>;
+    previewBundle(input: PreviewBundleWireRequest): Promise<PreviewBundleWireResult>;
+    abandonRuntime(input: AbandonRuntimeRequest): Promise<AbandonRuntimeResult>;
 }
 /**
  * 把核心方法装配成 Typert Remote 服务类实例。
  * 协议模块不可用或 Context 缺失时显式抛错，严禁静默失败。
  */
-export declare function defineGameCenterService(core: GameCenterCore, ctx: GameCenterHostContext): GameCenterService;
+export declare function defineGameCenterService(core: GameCenterCore, ctx: GameCenterHostContext, options?: Partial<GameCenterServiceOptions>): GameCenterService;
 export {};

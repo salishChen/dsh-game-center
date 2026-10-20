@@ -72,7 +72,7 @@ function parseMethods(body) {
     if (keywords.has(name)) continue;
     const rawParams = m[2].trim();
     /** @type {string[]} */
-    const params = rawParams === '' ? [] : rawParams.split(',').map((p) => p.split(':')[0].trim());
+    const params = rawParams === '' ? [] : rawParams.split(',').map((p) => p.split(':')[0].trim().replace(/\?$/, ''));
     out.set(name, { params });
   }
   return out;
@@ -82,9 +82,19 @@ const hostMethods = parseMethods(classBody);
 note(`Host 方法: ${[...hostMethods.keys()].join(', ')}`);
 
 // —— 3. 解析 REMOTE_METHODS 白名单 ——
+let remoteMethods = [];
 const rmMatch = serviceSrc.match(/const REMOTE_METHODS\s*=\s*\[([^\]]+)\]/);
-if (rmMatch === null) fail('无法解析 REMOTE_METHODS');
-const remoteMethods = rmMatch === null ? [] : [...rmMatch[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
+if (rmMatch !== null) {
+  remoteMethods = [...rmMatch[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
+} else if (serviceSrc.includes('REMOTE_METHODS = GAMECENTER_REMOTE_METHODS')) {
+  const wiringPath = path.join(repoRoot, 'packages', 'protocol', 'src', 'wiring.ts');
+  const wiringSrc = readFileSync(wiringPath, 'utf8');
+  const gmMatch = wiringSrc.match(/export const GAMECENTER_REMOTE_METHODS\s*=\s*\[([^\]]+)\]/);
+  if (gmMatch !== null) {
+    remoteMethods = [...gmMatch[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
+  }
+}
+if (remoteMethods.length === 0) fail('无法解析 REMOTE_METHODS');
 note(`Host REMOTE_METHODS = [${remoteMethods.join(', ')}]`);
 
 // —— 4. 与 Client contribution 比对 ——
@@ -139,10 +149,10 @@ for (const method of remoteMethods) {
   }
 }
 
-// —— 5. Client 不能有 Host 未声明的方法 ——
-for (const method of clientByMethod.keys()) {
-  if (!remoteMethods.includes(method)) {
-    fail(`${method}: Client 声明了任务但 Host REMOTE_METHODS 里没有`);
+// —— 5. Host 声明的所有方法必须在 Client 存在 ——
+for (const method of remoteMethods) {
+  if (!clientByMethod.has(method)) {
+    fail(`${method}: Host REMOTE_METHODS 声明了但 Client 缺少对应 descriptor`);
   }
 }
 

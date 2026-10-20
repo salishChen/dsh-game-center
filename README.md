@@ -24,7 +24,9 @@ DSH（DeepSeek Harness）内的小游戏平台：以 GitHub Issue 为游戏目�
 
 ## 环境要求
 
-- Node.js ≥ 20（实测 v24.x 可用）
+- Node.js **24.x**（`engines` 写 `>=24.0.0 <25`）
+  - 依据：`node:sqlite` 是 Host 存档后端的实际依赖；本项目只在 **Node 24.19.0（开发机）** 与 **Node 24.21.0（DSH 宿主）** 上实测通过。
+  - `node:sqlite` 虽在更早版本引入，但未验证那些版本是否需要实验性 flag，因此**不承诺** 24 以下的兼容范围；需支持更低版本时须单独实测并补证据。
 - pnpm 11.21.0（`packageManager` 字段已锁定）
 
 ## 从干净克隆构建与测试

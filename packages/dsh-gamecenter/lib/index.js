@@ -21,9 +21,16 @@
  * - 不改 DSH 安装目录、不写玩家 profile、不启动替代服务器。
  * - 不在装载时发起任何模型调用（含 `stream()`）；`modelCatalog` 只在被调用时读目录。
  */
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { createHash, randomBytes } from 'node:crypto';
 import { isMinimalContext } from "./dsh-adapter/context.js";
 import { GameCenterCore, defineGameCenterService } from "./remote/game-center-service.js";
+import { SaveStore, MemorySaveBackend } from "./storage/save-store.js";
+import { SqliteSaveBackend } from "./storage/sqlite-save-backend.js";
+export * from "./storage/save-store.js";
+export * from "./storage/sqlite-save-backend.js";
 /**
  * ## 为什么这里**没有** `import '@dsh-gamecenter/client'`（曾加过，已移除）
  *
@@ -52,11 +59,51 @@ import { GameCenterCore, defineGameCenterService } from "./remote/game-center-se
  */
 /** Cordis 注入声明：只读模型目录需要 `llm`。 */
 export const inject = ['llm'];
+/** 握手未确认扫描间隔（默认 1000ms；与 LEASE_ACK_WINDOW_MS 3000ms 构成 4000ms 硬上界）。 */
+export const SCAN_INTERVAL_MS = 1000;
+/**
+ * 受信宿主 playerId 安全解析。
+ *
+ * 规则（PM 2026-10-20 硬要求）：
+ * 1. 优先从 options.playerId 获取；
+ * 2. 其次从宿主上下文 ctx 获取（如 ctx.playerId 或 ctx.user?.id）；
+ * 3. 缺失或包含路径穿越字符（'..', '/', '\'）坚决抛错拒启，严禁静默回退 default-player。
+ */
+export function resolvePlayerId(ctx, options = {}) {
+    const candidate = options.playerId;
+    if (!candidate || typeof candidate !== 'string' || candidate.trim().length === 0) {
+        throw new TypeError('@dsh-gamecenter/host: 缺少必要配置 options.playerId（无法解析受信宿主 playerId，未显式配置），拒绝启动');
+    }
+    const trimmed = candidate.trim();
+    if (!/^[A-Za-z0-9._:-]{1,128}$/.test(trimmed) || trimmed.includes('..') || trimmed.includes('/') || trimmed.includes('\\')) {
+        throw new TypeError(`@dsh-gamecenter/host: 解析到的 playerId 非法或包含路径穿越字符: '${trimmed}'`);
+    }
+    return trimmed;
+}
+/**
+ * 宿主数据目录安全解析。
+ *
+ * 规则（PM 2026-10-20 硬要求）：
+ * 1. 必须由 options.dataDir 显式配置绝对路径；
+ * 2. 缺失或非绝对路径显式抛错拒绝启动；
+ * 3. 禁止未核实环境变量盲目猜测真实 profile 路径，禁止落入 cwd。
+ */
+export function resolveDataDir(options = {}) {
+    const dir = options.dataDir;
+    if (!dir || typeof dir !== 'string' || dir.trim().length === 0) {
+        throw new TypeError('@dsh-gamecenter/host: 缺少必要配置 options.dataDir（必须为绝对路径），未配置可靠数据目录时禁止启动');
+    }
+    const trimmed = dir.trim();
+    if (!path.isAbsolute(trimmed)) {
+        throw new TypeError(`@dsh-gamecenter/host: options.dataDir 必须为绝对路径，收到: '${dir}'`);
+    }
+    return path.resolve(trimmed);
+}
 /**
  * 运行凭证摘要（**密码学摘要**）。
  *
  * 历史：早期是 `noncrypto-fnv1a64`（无依赖、仅用于"不存原文"）。现在凭证成为
- * **身份认证依据**（`pause`/`saveAck`/`leaseStatus` 靠它定位租约），
+ * **身份认证依据**（`pause`/`saveAck`/`leaseStatus`/`saveCheckpoint` 靠它定位租约），
  * 非密码学摘要在攻击者可控输入下可被碰撞/预映像，**不足以承担认证**，
  * 因此改用 `node:crypto` 的 SHA-256。
  * 只存摘要、不存原文；原文仅在握手响应里下发一次给 Client Bridge。
@@ -78,24 +125,80 @@ export function apply(ctx, options = {}) {
     if (!isMinimalContext(ctx)) {
         throw new TypeError('@dsh-gamecenter/host: apply() 需要 Cordis Context（缺少 effect）');
     }
+    // 1. 受信身份校验（未注入直接抛错拒绝启动）
+    const playerId = resolvePlayerId(ctx, options);
+    // 2. 存储后端与游戏目录解析
+    let saveStore;
+    let gameLibraryDir;
+    let dataDir;
+    if (options.storageBackend) {
+        saveStore = new SaveStore(options.storageBackend);
+        gameLibraryDir = options.gameLibraryDir ?? (options.dataDir ? path.join(path.resolve(options.dataDir), 'games') : path.join(os.tmpdir(), 'dsh-games-test'));
+    }
+    else {
+        dataDir = resolveDataDir(options);
+        fs.mkdirSync(dataDir, { recursive: true });
+        gameLibraryDir = options.gameLibraryDir ?? path.join(dataDir, 'games');
+        fs.mkdirSync(gameLibraryDir, { recursive: true });
+        const sqliteBackend = new SqliteSaveBackend({
+            dbPath: path.join(dataDir, 'gamecenter.sqlite'),
+        });
+        saveStore = new SaveStore(sqliteBackend);
+    }
     const core = new GameCenterCore({
-        nowMs: () => Date.now(),
+        nowMs: options.nowMs ?? (() => Date.now()),
         digestToken,
         createToken,
         ...(options.ttlMs === undefined ? {} : { ttlMs: options.ttlMs }),
     });
     const hostCtx = ctx;
-    const service = defineGameCenterService(core, hostCtx);
+    const service = defineGameCenterService(core, hostCtx, {
+        playerId,
+        saveStore,
+        gameLibraryDir,
+        previewDir: options.previewDir,
+        approvals: options.approvals,
+        catalogMode: options.catalogMode,
+        catalogFixtureEntries: options.catalogFixtureEntries,
+    });
+    const scanIntervalMs = options.scanIntervalMs ?? SCAN_INTERVAL_MS;
+    let timer;
     let disposed = false;
     ctx.effect(() => {
+        timer = setInterval(() => {
+            try {
+                core.sweepUnconfirmed();
+            }
+            catch (e) {
+                console.warn('@dsh-gamecenter/host: sweepUnconfirmed failed:', e);
+            }
+        }, scanIntervalMs);
+        if (typeof timer === 'object' && timer !== null && 'unref' in timer) {
+            const maybeTimer = timer;
+            maybeTimer.unref?.();
+        }
         return () => {
+            if (timer !== undefined) {
+                clearInterval(timer);
+                timer = undefined;
+            }
             disposed = true;
         };
     }, 'gamecenter: host service lifetime');
     return {
         core,
+        saveStore,
+        service,
+        playerId,
+        dataDir,
+        gameLibraryDir,
         remoteMounted: service !== null,
+        scanIntervalMs,
         dispose: () => {
+            if (timer !== undefined) {
+                clearInterval(timer);
+                timer = undefined;
+            }
             disposed = true;
         },
     };

@@ -41,6 +41,9 @@ function handshake(core, overrides = {}) {
     gameVersion: '1.0.0',
     sdkVersion: '1.0.0',
     bridgeVersion: 1,
+    // 2026-10-20 起 saveId 是握手必填（Host 不再回退 runtimeInstanceId）。
+    saveId: 'save-default',
+    launchToken: 'launch-token-0123456789abcdef0123456789',
     ...overrides,
   })
 }
@@ -78,6 +81,8 @@ test('凭证过期 → PAUSED / lease-expired', () => {
   const nowRef = { now: Date.parse('2026-10-19T00:00:00.000Z') }
   const { core } = makeCore(nowRef)
   const hs = handshake(core)
+  // 客户端拿到握手后发起确认，转为 running
+  core.leaseStatus({ runtimeToken: hs.runtimeToken })
   nowRef.now += 60_000 // 超过 ttl
   const res = core.pause({ runtimeToken: hs.runtimeToken, reason: 'x' })
   assert.equal(res.accepted, false)
@@ -92,6 +97,9 @@ test('【跨存档碰撞】相同 generation 的两个存档互不影响：A 的
   const b = handshake(core, { gameId: 'game.B' })
   assert.equal(a.generation, 1)
   assert.equal(b.generation, 1)
+
+  // 客户端确认 A 进入 running
+  core.leaseStatus({ runtimeToken: a.runtimeToken })
 
   // 用 B 的凭证暂停 —— 只能影响 B
   const pausedB = core.pause({ runtimeToken: b.runtimeToken, reason: 'b' })

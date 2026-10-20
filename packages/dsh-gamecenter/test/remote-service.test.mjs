@@ -39,13 +39,27 @@ test('装配后服务绑定 gameCenter 命名空间', () => {
   assert.equal(service.typertRemote.serviceKey, 'gameCenter')
 })
 
-test('全部 5 个方法都被真实 @Remote 装饰器标记（否则 Gateway 不会暴露）', () => {
+test('全部 13 个方法都被真实 @Remote 装饰器标记（否则 Gateway 不会暴露）', () => {
   const root = new Context()
   const core = makeCore()
   const service = defineGameCenterService(core, root)
   assert.ok(service)
   const methods = remoteMethods(service).map((m) => m.exportName ?? m.method).sort()
-  assert.deepEqual(methods, ['handshake', 'leaseStatus', 'modelCatalog', 'pause', 'saveAck'])
+  assert.deepEqual(methods, [
+    'abandonRuntime',
+    'catalogInstall',
+    'catalogList',
+    'gameBundle',
+    'handshake',
+    'leaseStatus',
+    'modelCatalog',
+    'pause',
+    'previewBundle',
+    'previewList',
+    'saveAck',
+    'saveCheckpoint',
+    'saveLatest',
+  ])
 })
 
 test('handshake 下发 generation 与 runtimeToken，并生成运行凭证摘要', () => {
@@ -56,6 +70,8 @@ test('handshake 下发 generation 与 runtimeToken，并生成运行凭证摘要
   const first = service.handshake({
     runtimeInstanceId: 'rt-1', nonce: 'n1', gameId: 'example.game',
     gameVersion: '1.0.0', sdkVersion: '1.0.0', bridgeVersion: 1,
+    saveId: 'save-default',
+    launchToken: 'launch-token-0123456789abcdef0123456789',
   })
   assert.equal(first.ok, true)
   assert.equal(first.generation, 1)
@@ -69,6 +85,8 @@ test('bridgeVersion 不是 1 时拒绝握手', () => {
   const result = service.handshake({
     runtimeInstanceId: 'rt-1', nonce: 'n', gameId: 'g',
     gameVersion: '1', sdkVersion: '1', bridgeVersion: 2,
+    saveId: 'save-default',
+    launchToken: 'launch-token-0123456789abcdef0123456789',
   })
   assert.equal(result.ok, false)
   assert.equal(result.errorCode, 'PROTOCOL_INVALID')
@@ -81,6 +99,8 @@ test('saveAck 形状：凭证 + revision → 当前代次接受，旧代次或�
   const hs = service.handshake({
     runtimeInstanceId: 'rt-1', nonce: 'n', gameId: 'g',
     gameVersion: '1', sdkVersion: '1', bridgeVersion: 1,
+    saveId: 'save-default',
+    launchToken: 'launch-token-0123456789abcdef0123456789',
   })
   assert.equal(hs.ok, true)
 
@@ -105,6 +125,8 @@ test('暂停后 pause 幂等；未握手就 pause 返回状态错误', () => {
   const hs = service.handshake({
     runtimeInstanceId: 'rt-1', nonce: 'n', gameId: 'g',
     gameVersion: '1', sdkVersion: '1', bridgeVersion: 1,
+    saveId: 'save-default',
+    launchToken: 'launch-token-0123456789abcdef0123456789',
   })
   assert.equal(service.pause({ runtimeToken: hs.runtimeToken, reason: 'a' }).accepted, true)
   assert.equal(service.pause({ runtimeToken: hs.runtimeToken, reason: 'b' }).accepted, true)

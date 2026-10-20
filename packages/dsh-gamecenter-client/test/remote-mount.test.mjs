@@ -247,12 +247,26 @@ function fakeRemote(state = {}) {
   };
 }
 
-test('contribution 形状：五个方法、namespace 一致、无 scope、strict codec', () => {
+test('contribution 形状：十三个方法、namespace 一致、无 scope、strict codec', () => {
   const contribution = createGameCenterContribution();
   assert.equal(contribution.package, '@dsh-gamecenter/client');
   assert.deepEqual(
     contribution.descriptors.map((d) => d.method),
-    ['handshake', 'pause', 'saveAck', 'leaseStatus', 'modelCatalog'],
+    [
+      'handshake',
+      'pause',
+      'saveAck',
+      'leaseStatus',
+      'catalogList',
+      'catalogInstall',
+      'gameBundle',
+      'saveLatest',
+      'saveCheckpoint',
+      'previewBundle',
+      'abandonRuntime',
+      'modelCatalog',
+      'previewList',
+    ],
   );
   for (const descriptor of contribution.descriptors) {
     assert.equal(descriptor.namespace, 'gameCenter');
@@ -261,6 +275,24 @@ test('contribution 形状：五个方法、namespace 一致、无 scope、strict
     assert.equal('scope' in descriptor, false, '不得填 scope');
   }
   assert.deepEqual(validateContributionShape(contribution), []);
+  // 协议方法表对账：descriptor 必须逐条等于 protocol GAMECENTER_REMOTE_METHODS
+  const methods = contribution.descriptors.map((d) => d.method).sort();
+  const expected = [
+    'abandonRuntime',
+    'catalogInstall',
+    'catalogList',
+    'gameBundle',
+    'handshake',
+    'leaseStatus',
+    'modelCatalog',
+    'pause',
+    'previewBundle',
+    'previewList',
+    'saveAck',
+    'saveCheckpoint',
+    'saveLatest',
+  ].sort();
+  assert.deepEqual(methods, expected, 'descriptor 必须与协议 13 条方法表完全一致');
 });
 
 test('modelCatalog 无业务参数，但必须声明 cancellation（否则 Host 少传 AbortSignal）', () => {
@@ -327,7 +359,7 @@ test('形状校验能抓出误填 scope（会走 scoped 路径）', () => {
   assert.ok(violations.some((v) => v.field === 'scope'));
 });
 
-test('端到端（MOCK）：挂载后能调用 gameCenter 五个方法', async () => {
+test('端到端（MOCK）：挂载后能调用 gameCenter 十三个方法', async () => {
   const remote = fakeRemote();
   const ctx = { remote };
   const mounted = await mountGameCenterRemote(ctx);
@@ -343,8 +375,34 @@ test('端到端（MOCK）：挂载后能调用 gameCenter 五个方法', async (
   assert.equal(catalog.ok, true);
   assert.deepEqual(catalog.received, [], 'modelCatalog 不传业务参数');
 
+  const list = await client.catalogList({ refresh: true });
+  assert.equal(list.ok, true);
+  assert.deepEqual(list.received, [{ refresh: true }]);
+
+  const install = await client.catalogInstall({ gameId: 'g', commit: 'c' });
+  assert.equal(install.ok, true);
+
+  const bundle = await client.gameBundle({ gameId: 'g', commit: 'c' });
+  assert.equal(bundle.ok, true);
+
+  const save = await client.saveLatest({ gameId: 'g', saveId: 's' });
+  assert.equal(save.ok, true);
+
+  const chk = await client.saveCheckpoint({ runtimeToken: 'tok', operationId: 'op-1', expectedRevision: 0, state: {} });
+  assert.equal(chk.ok, true);
+
+  const pList = await client.previewList();
+  assert.equal(pList.ok, true);
+
+  const pBundle = await client.previewBundle({ previewId: 'p-1' });
+  assert.equal(pBundle.ok, true);
+
+  // 第 13 条方法：abandonRuntime（2026-10-20 协议冻结）
+  const abandon = await client.abandonRuntime({ launchToken: 't'.repeat(43), runtimeInstanceId: 'rt-1' });
+  assert.equal(abandon.ok, true);
+
   const last = remote.calls.at(-1);
-  assert.equal(last.method, 'modelCatalog');
+  assert.equal(last.method, 'abandonRuntime');
   const ackCall = remote.calls.find((c) => c.method === 'handshake');
   assert.deepEqual(ackCall.args[0], { gameId: 'g', saveId: 's' }, 'wire 参数按 descriptors 顺序传入');
 });

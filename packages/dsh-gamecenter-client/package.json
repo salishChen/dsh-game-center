@@ -39,7 +39,7 @@
     "build": "node tools/build-bundle.mjs",
     "build:candidate": "node tools/build-candidate.mjs",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test test/runtime-lease.test.mjs test/host-bridge.test.mjs test/bridge-constants.test.mjs test/assembly.test.mjs test/focus.test.mjs test/bundle-shape.test.mjs test/remote-mount.test.mjs test/wire-contract.test.mjs test/discovery-chain.test.mjs test/host-half-types.test.mjs test/diagnostics.test.mjs test/real-host-staging-joint.test.mjs test/diagnostics-ui.test.mjs"
+    "test": "node --test test/runtime-lease.test.mjs test/host-bridge.test.mjs test/bridge-constants.test.mjs test/assembly.test.mjs test/focus.test.mjs test/bundle-shape.test.mjs test/remote-mount.test.mjs test/wire-contract.test.mjs test/discovery-chain.test.mjs test/host-half-types.test.mjs test/diagnostics.test.mjs test/real-host-staging-joint.test.mjs test/diagnostics-ui.test.mjs test/sdk.test.mjs test/bridge-security-a9.test.mjs test/message-port-checkpoint.test.mjs test/assembler.test.mjs test/production-wiring-e2e.test.mjs"
   },
   "license": "UNLICENSED"
 }

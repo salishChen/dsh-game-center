@@ -4,7 +4,8 @@
  *
  * 契约与安全硬约束：
  * 1. 独立探针实例：使用专用 gameId（`__gamecenter_diag__`），生成独立 runtimeInstanceId。
- * 2. 同一链条复用：saveId 由 Host 内部绑定为 runtimeInstanceId，因此链内贯通复用同一 ID。
+ * 2. 同一链条复用：saveId 是**存档槽位**（固定 `save-default`），与 runtimeInstanceId 分离；
+ *    链内所有依赖租约的探针（handshake / leaseStatus / pause / saveAck）复用同一槽位。
  * 3. 严格只读/无付费：modelCatalog 只读元数据，绝不发起 stream/模型调用。
  * 4. 真实结果判定：旧代次 saveAck 必须严格断言 STALE_RUNTIME 错误，不把失败当成功。
  * 5. 错误脱敏：不展示 token 等凭据，错误消息做安全截断。
@@ -14,6 +15,15 @@
  */
 
 export const DIAG_GAME_ID = '__gamecenter_diag__';
+
+/**
+ * 诊断链自己的 `launchToken`（协议 2026-10-20 冻结必填）。
+ *
+ * 诊断是**一次性探针**，不需要"撤销别人实例"的能力，但它必须满足
+ * `isLaunchTokenShapeValid()`（32~256 位可见 ASCII、无空白/控制字符）才能过 Host 握手。
+ * 固定字面量只为让多轮诊断可复现；真实 UI 路径每次启动都重新生成（见 GameCenterOverlay）。
+ */
+const LAUNCH_TOKEN_DIAG = 'diag-launch-token-fixed-0000000000000000';
 
 /** 单次远程调用的有界超时上限 (ms) */
 export const RPC_TIMEOUT_MS = 3000;
@@ -157,6 +167,9 @@ export async function runRemoteDiagnostics({ remoteState, client, makeNonce, onR
 
   const nonce = makeNonce();
   const runtimeInstanceId = `diag-${nonce.length > 16 ? nonce.slice(0, 16) : nonce}`;
+  // 存档槽位与运行身份**分离**（2026-10-20 起 Host 不再回退 runtimeInstanceId）。
+  // 诊断链内所有依赖租约的探针必须复用同一个 saveId，否则 Host 侧槽位与查询不一致。
+  const saveId = 'save-default';
   // 严格使用固定 gameId，依赖 Host 的 runtimeToken 凭证精准定位租约
   const gameId = DIAG_GAME_ID;
   let activeGeneration = 0;
@@ -174,6 +187,9 @@ export async function runRemoteDiagnostics({ remoteState, client, makeNonce, onR
         gameVersion: '0.0.0',
         sdkVersion: '0.0.0',
         bridgeVersion: 1,
+        saveId,
+        // 协议必填：abandonRuntime 用它证明"我就是这个启动的发起者"。
+        launchToken: LAUNCH_TOKEN_DIAG,
       }),
       RPC_TIMEOUT_MS,
       'handshake',
@@ -294,7 +310,7 @@ export async function runRemoteDiagnostics({ remoteState, client, makeNonce, onR
   try {
     emit({ key: 'lease', label: '租约状态 (leaseStatus)', status: 'pending', value: '查询中…' });
     const ls = await callWithTimeout(
-      client.leaseStatus({ runtimeToken: activeToken, gameId, saveId: runtimeInstanceId }),
+      client.leaseStatus({ runtimeToken: activeToken, gameId, saveId }),
       RPC_TIMEOUT_MS,
       'leaseStatus',
       signal,
@@ -437,6 +453,37 @@ export async function runRemoteDiagnostics({ remoteState, client, makeNonce, onR
       status: 'fail',
       value: `保存确认失败 [${anyErr.code || 'UNKNOWN'}]: ${sanitizeMessage(anyErr.message)}`,
     });
+  }
+
+  // 8. 放弃启动 (abandonRuntime) —— 2026-10-20 协议冻结的第 13 条方法。
+  // 放在最后：此时本轮的 runtimeToken 已封存，重复 abandon 应幂等成功。
+  // 只验证"能调用且不抛错"，不把 Host 未实现判成 UI 故障（真实环境由门禁工具报）。
+  if (typeof client.abandonRuntime === 'function' && activeToken !== null) {
+    try {
+      emit({ key: 'abandon', label: '放弃启动 (abandonRuntime)', status: 'pending', value: '取消中…' });
+      const res = await callWithTimeout(
+        client.abandonRuntime({ launchToken: LAUNCH_TOKEN_DIAG, runtimeInstanceId }),
+        RPC_TIMEOUT_MS,
+        'abandonRuntime',
+        signal,
+      );
+      if (signal?.aborted) return rows;
+      emit({
+        key: 'abandon',
+        label: '放弃启动 (abandonRuntime)',
+        status: 'ok',
+        value: `已放弃 (reclaimed=${res?.reclaimed === true})`,
+      });
+    } catch (err) {
+      const anyErr = /** @type {any} */ (err);
+      if (anyErr.code === 'ABORTED' || signal?.aborted) return rows;
+      emit({
+        key: 'abandon',
+        label: '放弃启动 (abandonRuntime)',
+        status: 'warn',
+        value: `不可用 [${anyErr.code || 'UNKNOWN'}]: ${sanitizeMessage(anyErr.message)}`,
+      });
+    }
   }
 
   return rows;

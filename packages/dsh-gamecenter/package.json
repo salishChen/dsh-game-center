@@ -22,11 +22,12 @@
     }
   },
   "engines": {
-    "node": ">=20",
+    "node": ">=24.0.0 <25",
     "dsh": ">=0.2.1-rc.2 <0.3.0"
   },
   "dependencies": {
     "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.2",
+    "@dsh-gamecenter/catalog": "workspace:*",
     "@dsh-gamecenter/client": "workspace:*",
     "@dsh-gamecenter/protocol": "workspace:*"
   },

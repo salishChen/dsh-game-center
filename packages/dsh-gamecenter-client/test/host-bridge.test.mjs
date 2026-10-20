@@ -6,9 +6,13 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   HANDSHAKE_TAG,
+  createLaunchToken,
   createNonce,
   createRateLimiter,
   outboundError,
@@ -19,6 +23,7 @@ import {
 
 const IFrameSource = Object.freeze({ name: 'fake-iframe-window' });
 const ATTACKER = Object.freeze({ name: 'attacker-window' });
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 test('握手只认确定的 event.source + 一次性 nonce + 运行实例', () => {
   const good = {
@@ -113,4 +118,169 @@ test('nonce 每次不同且长度足够', () => {
   assert.notEqual(a, b);
   assert.equal(a.length, 48);
   assert.match(a, /^[0-9a-f]+$/);
+});
+
+test('nonce：无 CSPRNG 时必须抛错，不再静默降级到 Math.random', () => {
+  const restore = withGlobalCrypto({ getRandomValues: undefined });
+  try {
+    assert.throws(
+      () => createNonce(),
+      /CSPRNG/,
+      'nonce 同样是一次性握手凭证依据，无 CSPRNG 必须显式失败',
+    );
+  } finally {
+    restore();
+  }
+  // 恢复后仍能正常生成（证明没有污染全局状态）
+  assert.match(createNonce(), /^[0-9a-f]{48}$/);
+});
+
+/**
+ * 剥离源码中的注释，只留可执行代码。
+ *
+ * 【为什么不能只滤行首】只滤 `*` / `//` 开头的行会漏掉**行内尾随注释**：
+ * `const a = 1; // Math.random() 只是注释` 会被当成代码，既可能误报
+ * （注释里提到 Math.random 就报红），也可能掩盖真实问题。这里按顺序
+ * 处理字符串字面量、块注释、行注释，三种都剥掉。
+ *
+ * @param {string} src
+ * @returns {string}
+ */
+function stripComments(src) {
+  /** @type {string} */
+  let out = '';
+  let i = 0;
+  const n = src.length;
+  while (i < n) {
+    const two = src.slice(i, i + 2);
+    if (two === '/*') {
+      const end = src.indexOf('*/', i + 2);
+      i = end === -1 ? n : end + 2;
+      out += ' ';
+      continue;
+    }
+    if (two === '//') {
+      const end = src.indexOf('\n', i + 2);
+      i = end === -1 ? n : end;
+      continue;
+    }
+    const ch = src[i];
+    if (ch === '"' || ch === "'" || ch === '`') {
+      // 字符串字面量整体保留内容但不当代码扫描：跳过到匹配引号
+      let j = i + 1;
+      while (j < n) {
+        if (src[j] === '\\') {
+          j += 2;
+          continue;
+        }
+        if (src[j] === ch) break;
+        j += 1;
+      }
+      out += src.slice(i, Math.min(j + 1, n));
+      i = j + 1;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
+test('安全凭证不得有可猜兜底：nonce/launchToken 路径中不出现 Math.random', () => {
+  // 只针对**鉴权凭证**文件做静态断言：nonce 与 launchToken 都出自 host-bridge.js。
+  // assembler/sdk 里的 sdkInstanceId 只是 iframe 内日志标识，不参与鉴权，不在本断言范围。
+  const bridgeSrc = fs.readFileSync(path.resolve(here, '../src/bridge/host-bridge.js'), 'utf8');
+  // 先证明剥离函数本身有效（防止哪天它坏了导致断言永远绿）
+  assert.equal(stripComments('const a = 1; // Math.random()'), 'const a = 1; ', '行注释必须被剥离');
+  assert.equal(stripComments('/* Math.random() */const a = 1'), ' const a = 1', '块注释必须被剥离');
+  assert.equal(stripComments("const s = 'Math.random()';"), "const s = 'Math.random()';", '字符串内容必须保留');
+
+  const bridgeCode = stripComments(bridgeSrc);
+  assert.ok(
+    !bridgeCode.includes('Math.random'),
+    'host-bridge.js 的可执行代码中不得出现 Math.random（nonce/launchToken 不得静默降级）',
+  );
+
+  // Overlay 的 nonce/launchToken 兜底同样不得用可猜值
+  const overlaySrc = fs.readFileSync(path.resolve(here, '../src/ui/GameCenterOverlay.js'), 'utf8');
+  const overlayCode = stripComments(overlaySrc);
+  const nonceLines = overlayCode
+    .split('\n')
+    .filter((line) => line.includes('const nonce =') || line.includes('const launchToken'));
+  assert.ok(nonceLines.length >= 4, `正式与预览两条路径都必须生成 nonce 与 launchToken，实际 ${nonceLines.length}`);
+  for (const line of nonceLines) {
+    assert.ok(!line.includes('Math.random'), `凭证生成不得有可猜兜底: ${line.trim()}`);
+  }
+});
+
+test('launchToken：形状满足协议 isLaunchTokenShapeValid（32~256 位可见 ASCII、无空白）', () => {
+  const token = createLaunchToken();
+  assert.ok(typeof token === 'string');
+  assert.ok(token.length >= 32 && token.length <= 256, `长度必须在 32~256，实际 ${token.length}`);
+  // 可见 ASCII（0x21-0x7e），无空白/控制字符
+  assert.match(token, /^[\x21-\x7e]+$/);
+  // base64url 字符集（当前实现）
+  assert.match(token, /^[A-Za-z0-9_-]+$/);
+  assert.notEqual(createLaunchToken(), token, '两次生成必须不同（不可猜）');
+});
+
+/**
+ * 临时把 `globalThis.crypto` 替换成给定值，返回恢复函数。
+ * Node 的 crypto 是只读 getter，必须用 defineProperty 覆盖。
+ * @param {any} value
+ * @returns {() => void}
+ */
+function withGlobalCrypto(value) {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  Object.defineProperty(globalThis, 'crypto', {
+    value,
+    configurable: true,
+    enumerable: descriptor?.enumerable ?? false,
+    writable: true,
+  });
+  return () => {
+    if (descriptor !== undefined) {
+      Object.defineProperty(globalThis, 'crypto', descriptor);
+    } else {
+      // @ts-expect-error 测试内清理
+      delete globalThis.crypto;
+    }
+  };
+}
+
+test('launchToken：无 CSPRNG 时必须抛错，绝不降级到 Math.random', () => {
+  const restore = withGlobalCrypto({ getRandomValues: undefined });
+  try {
+    assert.throws(
+      () => createLaunchToken(),
+      /CSPRNG/,
+      '没有 CSPRNG 时必须抛错，不得降级到可猜的 Math.random',
+    );
+  } finally {
+    restore();
+  }
+  // 恢复后必须仍能正常生成（验证上面没有污染全局状态）
+  assert.match(createLaunchToken(), /^[A-Za-z0-9_-]{32,256}$/);
+});
+
+test('launchToken：无 crypto 对象时同样抛错（连 getRandomValues 字段都没有）', () => {
+  const restore = withGlobalCrypto(undefined);
+  try {
+    assert.throws(() => createLaunchToken(), /CSPRNG/);
+  } finally {
+    restore();
+  }
+  assert.match(createLaunchToken(), /^[A-Za-z0-9_-]{32,256}$/);
+});
+
+test('launchToken：btoa 不可用时退回十六进制，仍满足形状约束', () => {
+  const originalBtoa = globalThis.btoa;
+  // @ts-expect-error 故意置空
+  globalThis.btoa = undefined;
+  try {
+    const token = createLaunchToken();
+    assert.match(token, /^[0-9a-f]{64}$/, '无 btoa 时应退回 64 位十六进制（32 字节）');
+  } finally {
+    globalThis.btoa = originalBtoa;
+  }
 });
