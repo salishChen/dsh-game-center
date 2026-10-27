@@ -37,11 +37,19 @@
  */
 
 import type { JsonValue } from './json.js'
+import type { ErrorCode } from './errors.js'
 import { COMMIT_PATTERN, DIGEST_PATTERN } from './catalog.js'
 import { GAME_ID_PATTERN } from './manifest.js'
 import { isSafeRelativePath, isSafePathSegment } from './install.js'
 import { utf8ByteLength } from './bridge.js'
 import { CHECKPOINT_OPERATION_ID_PATTERN } from './checkpoint.js'
+import {
+  MEDIA_ALLOWED_MIME,
+  MEDIA_MAX_BYTES_PER_IMAGE,
+  DIGEST_HEX_PATTERN,
+  type MediaMime,
+  type CatalogDisplayMetadata,
+} from './catalogMetadata.js'
 
 /**
  * `gameCenter` 命名空间的**完整**方法表（既有 5 + 阶段1 新增 8）。
@@ -63,32 +71,75 @@ export const GAMECENTER_REMOTE_METHODS = [
   // —— 阶段1 冻结新增 ——
   'catalogList',
   'catalogInstall',
+  'catalogUninstall',
   'gameBundle',
   'saveLatest',
   'saveCheckpoint',
   'previewList',
   'previewBundle',
   'abandonRuntime',
+  'mediaFetch',
+  // ── 2026-10-21 AI 生成（最小 wire，非通用 prompt 端点）──
+  'aiGenerate',
+  'walletStatus',
+  'walletAction',
+  'setAiBinding',
+  'suspendRuntime',
+  'resumeRuntime',
+  'cancelAi',
+  'landlordAction',
+  'arenaAction',
 ] as const
 
 export type GameCenterRemoteMethod = (typeof GAMECENTER_REMOTE_METHODS)[number]
 
-/** 阶段1 新增的 8 条；Client/Host 用它做"是否已补齐"的对账，避免漏实现。 */
+/** 阶段1 新增列表；Client/Host 用它做"是否已补齐"的对账，避免漏实现。 */
 export const GAMECENTER_REMOTE_METHOD_ADDITIONS = [
   'catalogList',
   'catalogInstall',
+  'catalogUninstall',
   'gameBundle',
   'saveLatest',
   'saveCheckpoint',
   'previewList',
   'previewBundle',
   'abandonRuntime',
+  'mediaFetch',
+  'aiGenerate',
+  'walletStatus',
+  'walletAction',
+  'setAiBinding',
+  'suspendRuntime',
+  'resumeRuntime',
+  'cancelAi',
+  'landlordAction',
+  'arenaAction',
 ] as const
+
+/** Host commands accept actions, never a client-supplied deck, seat, hand or prompt. */
+export interface LandlordCommand {
+  action: 'state' | 'new' | 'bid' | 'play' | 'pass' | 'ai' | 'cancel' | 'review'
+  operationId:string
+  expectedRevision?:number
+  cards?:number[]
+  bid?:number
+}
+export interface LandlordActionRequest extends LandlordCommand { runtimeToken:string }
+export interface LandlordActionResult {
+  ok:boolean
+  /** Public player view only. The Host builds and validates this JSON; no full-state serialization. */
+  view?:unknown
+  decision?:unknown
+  /** Available only after the authoritative game reaches finished. */
+  review?:unknown
+  errorCode?:string
+  message?:string
+}
 
 export type GameCenterRemoteMethodAddition = (typeof GAMECENTER_REMOTE_METHOD_ADDITIONS)[number]
 
-/** 目录来源：只有这两种，`fixture` 表示没有真实发布元组时的本地预览。 */
-export const CATALOG_WIRE_SOURCES = ['github', 'fixture'] as const
+/** 目录来源：`github` 直连 Issue，`remote` 由后台聚合后下发，`fixture` 表示没有真实发布元组时的本地预览。 */
+export const CATALOG_WIRE_SOURCES = ['github', 'fixture', 'remote'] as const
 
 export type CatalogWireSource = (typeof CATALOG_WIRE_SOURCES)[number]
 
@@ -100,6 +151,7 @@ export type CatalogApprovalState = (typeof CATALOG_APPROVAL_STATES)[number]
 /** 目录条目（界面展示 + 安装判定所需的**全部**字段；不含 Issue 正文）。 */
 export interface CatalogListWireEntry {
   gameId: string
+  categories?: string[]
   title: string
   summary: string
   version: string
@@ -113,6 +165,15 @@ export interface CatalogListWireEntry {
   installed: boolean
   /** 已安装的提交；未安装为 null。 */
   installedCommit: string | null
+  /**
+   * 展示元数据（经 `validateDisplayMetadata` 校验后的结果，含 summary/descriptionMarkdown/
+   * compatibility/cover/screenshots）；机器块未提供时为 null。MD 简介渲染只认这里的值。
+   */
+  display?: CatalogDisplayMetadata | null
+  /** 发布或更新时间戳（ISO 8601，可选）。供前端按时间排序。 */
+  updatedAt?: string | undefined
+  /** 下载与安装统计（可选）。供前端展示与按下载量排序。 */
+  stats?: { downloads?: number; installs?: number } | undefined
 }
 
 /** `catalogList` 入参。`refresh:true` 才允许触网；缺省读缓存。 */
@@ -126,6 +187,10 @@ export type CatalogListWireResult =
       source: CatalogWireSource
       fetchedAt: string
       entries: CatalogListWireEntry[]
+      /** 是否为缓存旧数据（刷新未完成或离线降级时为 true） */
+      stale?: boolean
+      dataSource?: 'cache' | 'network'
+      error?: {code:string; message:string}
     }
   | { ok: false; errorCode: string; message: string }
 
@@ -154,10 +219,33 @@ export type CatalogInstallWireResult =
     }
   | { ok: false; errorCode: string; message: string }
 
-/** 打包体积上限（阶段1 单文件游戏；超限必须显式拒绝，不许截断）。 */
+export interface CatalogUninstallWireRequest {
+  gameId: string
+  commit?: string | undefined
+}
+
+export type CatalogUninstallWireResult =
+  | {
+      ok: true
+      gameId: string
+      commit?: string | undefined
+      removedPath: string
+    }
+  | { ok: false; errorCode: string; message: string }
+
+/**
+ * 打包体积上限（阶段1 单文件游戏；超限必须显式拒绝，不许截断）。
+ *
+ * 【唯一真源 · 2026-10-27】Host 下载器 (`fetchCommitArtifacts`)、安装安全校验
+ * (`pathSecurity.ts` 的 DEFAULT_* ) 都直接引用这两个常量，别再各自写字面量：
+ * 曾经下载侧写 32 MiB、安装侧写 64 MiB，而这里 30 MiB / 50 MiB，
+ * 同一个包在不同层得到不同上限与不同报错文案，排查时对不上账。
+ * 唯一例外是浏览器侧的 `client/src/runtime/assembler.js`（不能引用构建期常量），
+ * 它必须手工与这里保持一致。
+ */
 export const GAME_BUNDLE_MAX_FILES = 64
-export const GAME_BUNDLE_MAX_FILE_BYTES = 1024 * 1024
-export const GAME_BUNDLE_MAX_TOTAL_BYTES = 4 * 1024 * 1024
+export const GAME_BUNDLE_MAX_FILE_BYTES = 30 * 1024 * 1024
+export const GAME_BUNDLE_MAX_TOTAL_BYTES = 50 * 1024 * 1024
 export const GAME_BUNDLE_MAX_PATH_LENGTH = 256
 
 /** 允许打进 iframe 文档的文件后缀（阶段1 只要文本资产；二进制走终局资源服务）。 */
@@ -180,7 +268,7 @@ export const GAME_IFRAME_SANDBOX = 'allow-scripts'
  * 防基址劫持与表单外发。
  */
 export const GAME_DOCUMENT_CSP =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"
+  "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"
 
 /** `gameBundle` 入参。 */
 export interface GameBundleWireRequest {
@@ -209,6 +297,8 @@ export type GameBundleWireResult =
 
 /** `saveLatest` 入参。身份由 Host 绑定，调用方只能指定存档，不能指定别的玩家。 */
 export interface SaveLatestWireRequest {
+  commit?: string
+  previewId?: string
   gameId: string
   saveId: string
 }
@@ -263,6 +353,24 @@ export function validateCatalogInstallRequest(input: unknown): WireViolation[] {
 }
 
 /**
+ * 校验 `catalogUninstall` 入参。
+ */
+export function validateCatalogUninstallRequest(input: unknown): WireViolation[] {
+  const violations: WireViolation[] = []
+  if (typeof input !== 'object' || input === null) {
+    return [{ field: '*', reason: '入参必须是对象' }]
+  }
+  const raw = input as Record<string, unknown>
+  if (typeof raw.gameId !== 'string' || !GAME_ID_PATTERN.test(raw.gameId) || !isSafePathSegment(raw.gameId)) {
+    violations.push({ field: 'gameId', reason: `gameId 非法：${JSON.stringify(raw.gameId)}` })
+  }
+  if (raw.commit !== undefined && (typeof raw.commit !== 'string' || !COMMIT_PATTERN.test(raw.commit) || !isSafePathSegment(raw.commit))) {
+    violations.push({ field: 'commit', reason: 'commit 必须是 40 位小写十六进制完整提交 SHA' })
+  }
+  return violations
+}
+
+/**
  * 校验 `saveLatest` 入参。身份段（playerId）不在入参里：由 Host 从租约/宿主绑定取，
  * 调用方伪造不了。
  */
@@ -278,6 +386,9 @@ export function validateSaveLatestRequest(input: unknown): WireViolation[] {
   if (typeof raw.saveId !== 'string' || raw.saveId.length === 0 || raw.saveId.length > 128) {
     violations.push({ field: 'saveId', reason: 'saveId 必须是 1~128 字符的非空字符串' })
   }
+  if (raw.commit !== undefined && (typeof raw.commit !== 'string' || !COMMIT_PATTERN.test(raw.commit))) violations.push({field:'commit',reason:'非法固定提交'})
+  if (raw.previewId !== undefined && (typeof raw.previewId !== 'string' || !isSafePathSegment(raw.previewId))) violations.push({field:'previewId',reason:'非法预览目标'})
+  if (raw.commit !== undefined && raw.previewId !== undefined) violations.push({field:'commit',reason:'正式提交与预览目标互斥'})
   return violations
 }
 
@@ -448,7 +559,7 @@ export type SaveCheckpointWireResult =
   | { ok: true; revision: number; idempotentReplay: boolean }
   | {
       ok: false
-      errorCode: 'STALE_RUNTIME' | 'RATE_LIMIT' | 'PROTOCOL_INVALID' | 'INTERNAL'
+      errorCode: 'STALE_RUNTIME' | 'RATE_LIMIT' | 'PROTOCOL_INVALID' | 'INTERNAL' | 'SAVE_UNSUPPORTED'
       message: string
       retryable: boolean
       currentRevision?: number
@@ -525,6 +636,7 @@ export interface PreviewListWireEntry {
   /** 预览目录内的目录名；只作安全段使用，不是 commit。 */
   previewId: string
   gameId: string
+  categories?: string[]
   name: string
   version: string
   source: 'fixture'
@@ -672,3 +784,204 @@ export function isPauseFinalizationOrderValid(order: readonly string[]): boolean
     order.every((step, index) => step === PAUSE_FINALIZATION_ORDER[index])
   )
 }
+
+// ————————————————————————————————————————————————————————————————
+// mediaFetch：Host 受控拉取受信媒体（封面/截图），客户端只消费结果
+// ————————————————————————————————————————————————————————————————
+
+/**
+ * 受控媒体单次体积上限 = 目录元数据的单图上限（`MEDIA_MAX_BYTES_PER_IMAGE`，2 MiB）。
+ * 与 catalogMetadata 同一来源，接入媒体不得越过该值。
+ */
+export const MEDIA_MAX_BYTES = MEDIA_MAX_BYTES_PER_IMAGE
+
+/** 受控媒体 MIME 白名单 = 目录元数据白名单（png/jpeg/webp/gif，禁 SVG）。 */
+export const MEDIA_ALLOWED_MIMES = MEDIA_ALLOWED_MIME
+
+export interface MediaFetchRequest {
+  /** 来源 URL；Host 只允许受信域白名单，不接受任意外链。 */
+  url: string
+  /**
+   * 期望 MIME，**必填**：必须来自已校验目录元数据（`CatalogMediaRef.mime`）。
+   * 缺失或与实测 Content-Type/魔数不符即 MEDIA_MIME_MISMATCH。
+   */
+  expectedMime: MediaMime
+  /**
+   * 期望 SHA-256 摘要，**必填**：必须来自已校验目录元数据（`CatalogMediaRef.sha256`，
+   * 形如 `sha256:<64 位十六进制>`）。不得用"可选摘要"绕过完整性校验。
+   */
+  expectedSha256: string
+  /** 体积上限字节；缺省用 MEDIA_MAX_BYTES，且不得超过 MEDIA_MAX_BYTES。 */
+  maxBytes?: number
+}
+
+export type MediaFetchResult =
+  | {
+      ok: true
+      mime: MediaMime
+      sha256: string
+      byteLength: number
+      /** base64 编码的字节（Client 用它构造 blob/data URL，不直接外链）。 */
+      dataBase64: string
+    }
+  | {
+      ok: false
+      errorCode:
+        | 'PROTOCOL_INVALID'
+        | 'MEDIA_UNREACHABLE'
+        | 'MEDIA_MIME_MISMATCH'
+        | 'MEDIA_DIGEST_MISMATCH'
+        | 'MEDIA_TOO_LARGE'
+        | 'MEDIA_UNAVAILABLE'
+      message: string
+    }
+
+export function validateMediaFetchRequest(input: unknown): WireViolation[] {
+  const violations: WireViolation[] = []
+  if (typeof input !== 'object' || input === null) {
+    return [{ field: '*', reason: '入参必须是对象' }]
+  }
+  const raw = input as Record<string, unknown>
+  if (typeof raw.url !== 'string' || raw.url.trim().length === 0) {
+    violations.push({ field: 'url', reason: 'url 必须是非空字符串' })
+  }
+  // expectedMime / expectedSha256 均必填且必须来自已验证目录元数据
+  if (!MEDIA_ALLOWED_MIME.includes(raw.expectedMime as MediaMime)) {
+    violations.push({ field: 'expectedMime', reason: 'expectedMime 必填且只允许 png/jpeg/webp/gif（来自目录元数据）' })
+  }
+  if (typeof raw.expectedSha256 !== 'string' || !DIGEST_HEX_PATTERN.test(raw.expectedSha256)) {
+    violations.push({ field: 'expectedSha256', reason: 'expectedSha256 必填且必须为 sha256:<64 位十六进制>（来自目录元数据）' })
+  }
+  if (
+    raw.maxBytes !== undefined &&
+    (typeof raw.maxBytes !== 'number' || !Number.isSafeInteger(raw.maxBytes) || raw.maxBytes <= 0 || raw.maxBytes > MEDIA_MAX_BYTES)
+  ) {
+    violations.push({ field: 'maxBytes', reason: `maxBytes 必须是 1..${MEDIA_MAX_BYTES} 的整数或省略` })
+  }
+  return violations
+}
+
+// ---------------------------------------------------------------------------
+// AI 生成（2026-10-21 最小 wire：Client Bridge → Host → 现有 AI Broker）
+//
+// 【为什么只有四个字段】这里**不是**通用 prompt 端点：调用方只能声明"游戏要哪个
+// manifest slot、operationId 是什么、输入结构是什么"。provider / model / 工具 /
+// 权限一概由 Host 依据可信 manifest、模型绑定、预算与用户授权决定；客户端自报一律拒绝。
+// 成功 output 是 unknown（JSON）：棋盘之类的结构由**游戏自己**再按 schema 校验，
+// 平台不能代替游戏判定合法性（否则等于替游戏背书）。
+// ---------------------------------------------------------------------------
+
+/** `aiGenerate.input` 的 UTF-8 体积上限（字节）。棋盘请求远小于此，留足余量但不无限。 */
+export const AI_GENERATE_MAX_INPUT_BYTES = 256 * 1024
+
+/** `aiGenerate.slot`：与 manifest 里的 slot 名同口径（1~128 位 [A-Za-z0-9._:-]）。 */
+export const AI_GENERATE_SLOT_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
+
+/**
+ * `aiGenerate` 入参。
+ *
+ * 身份与授权都不在入参里：`runtimeToken` 只用来换出租约，slot 是否被 manifest 声明、
+ * 当前模型绑定、预算与用户授权全部由 Host 判定。
+ */
+export interface AiGenerateWireRequest {
+  /** 握手时下发的运行凭证（Host 只存摘要）；Client Bridge 持有，游戏 iframe 不接触。 */
+  runtimeToken: string
+  /** 幂等键：同一操作重试必须复用同一个值，Host 据此拒绝重复或复用旧结果。 */
+  operationId: string
+  /** manifest 里声明的 slot 名（如 `boardGeneration`），不是模型名。 */
+  slot: string
+  /** slot 输入结构；具体形状由该 slot 的契约决定，这里只保证是 JSON。 */
+  input: JsonValue
+}
+
+/**
+ * `aiGenerate` 出参。
+ *
+ * 失败一律用协议既有受限错误码，不新增自由字符串：未授权/未配置能力时 Host 必须
+ * 返回 `CAPABILITY_UNAVAILABLE`，**不得**回一条伪造的成功结果。
+ */
+export type AiGenerateWireResult =
+  | {
+      ok: true
+      /** 结构化或文本输出；游戏必须自行 schema 校验，平台不代替游戏判定。 */
+      output: JsonValue
+      binding?: AiModelBinding
+      elapsedMs?: number
+      usage?: JsonValue
+    }
+  | {
+      ok: false
+      errorCode: ErrorCode
+      message: string
+      retryable?: boolean
+    }
+
+/**
+ * 校验 `aiGenerate` 入参（**只做形状与体积**，不做授权）。
+ *
+ * 关键三条：
+ * 1. 只允许 `runtimeToken` / `operationId` / `slot` / `input` 四个顶层字段，多一个即拒绝；
+ * 2. `provider` / `model` / `tools` / `permissions` 之类出现即拒绝——静默忽略会让调用方
+ *    以为自报生效，正是要堵的绕过路径；
+ * 3. `input` 必须是可 JSON 序列化的值（无循环、无函数、有限数、UTF-8 体积有上限）。
+ */
+export function validateAiGenerateRequest(input: unknown): WireViolation[] {
+  const violations: WireViolation[] = []
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return [{ field: '*', reason: '入参必须是对象' }]
+  }
+  const raw = input as Record<string, unknown>
+
+  const allowed = new Set(['runtimeToken', 'operationId', 'slot', 'input'])
+  for (const key of Object.keys(raw)) {
+    if (!allowed.has(key)) {
+      violations.push({
+        field: key,
+        reason: `未允许的字段 ${key}：aiGenerate 不接受 provider/model/tools/permissions 等自报选择`,
+      })
+    }
+  }
+
+  if (typeof raw.runtimeToken !== 'string' || raw.runtimeToken.length === 0 || raw.runtimeToken.length > 512) {
+    violations.push({ field: 'runtimeToken', reason: '缺少运行凭证或长度非法（1~512）' })
+  }
+  if (typeof raw.operationId !== 'string' || !CHECKPOINT_OPERATION_ID_PATTERN.test(raw.operationId)) {
+    violations.push({
+      field: 'operationId',
+      reason: `operationId 必须是 1~128 位 [A-Za-z0-9._:-]：${JSON.stringify(raw.operationId)}`,
+    })
+  }
+  if (typeof raw.slot !== 'string' || !AI_GENERATE_SLOT_PATTERN.test(raw.slot)) {
+    violations.push({
+      field: 'slot',
+      reason: `slot 必须是 1~128 位 [A-Za-z0-9._:-]：${JSON.stringify(raw.slot)}`,
+    })
+  }
+  if (raw.input === undefined) {
+    violations.push({ field: 'input', reason: 'input 不能缺失（可以显式传 null）' })
+  } else {
+    let serialized: string | undefined
+    try {
+      serialized = JSON.stringify(raw.input)
+    } catch {
+      violations.push({ field: 'input', reason: 'input 不可 JSON 序列化（含循环引用或函数）' })
+    }
+    if (typeof serialized === 'string') {
+      if (utf8ByteLength(serialized) > AI_GENERATE_MAX_INPUT_BYTES) {
+        violations.push({
+          field: 'input',
+          reason: `input 超过体积上限（>${AI_GENERATE_MAX_INPUT_BYTES} 字节）`,
+        })
+      }
+    }
+  }
+  return violations
+}
+/** Platform UI selection; never accepted from game ai.generate payloads. */
+export interface AiModelBinding { providerId: string; modelId: string; reasoningEffort?: string }
+export interface SetAiBindingRequest extends AiModelBinding { runtimeToken: string; slot: string }
+export interface RuntimeControlRequest { runtimeToken: string; generation: number }
+
+export type RuntimeControlResult = {ok:true} | {ok:false;errorCode:string;message:string}
+export type SetAiBindingResult = {ok:true;binding:AiModelBinding} | {ok:false;errorCode:string;message:string}
+export interface CancelAiRequest {runtimeToken:string; operationId:string}

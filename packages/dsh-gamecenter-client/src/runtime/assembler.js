@@ -12,7 +12,7 @@
  *    - <script src="./game.js"></script> -> 内联 <script>
  *    - 严禁任何 http(s): 绝对外链，违者直接拒绝。
  * 4. 纵深防御文件校验：执行 validateGameBundleFiles，强校验文件数（<=64）、单文件（<=1MB）、
- *    总大小（<=4MB）与后缀白名单，杜绝路径逃逸。
+ *    总大小（<=32MB，容纳离线 Flash/WASM）与后缀白名单，杜绝路径逃逸。
  * 5. SDK 引导注入：在游戏脚本执行前注入微型引导脚本，利用 MessagePort 完成与宿主 Bridge 的通信，
  *    挂载 window.__DSH_GAMECENTER_SDK__，实现虚拟时钟、确定性随机数与暂停保存闭环。
  */
@@ -22,11 +22,13 @@ import { utf8ByteLength } from '../bridge/host-bridge.js';
 export const GAME_IFRAME_SANDBOX = 'allow-scripts';
 
 export const GAME_DOCUMENT_CSP =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'";
+  "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'";
 
 export const GAME_BUNDLE_MAX_FILES = 64;
-export const GAME_BUNDLE_MAX_FILE_BYTES = 1024 * 1024;
-export const GAME_BUNDLE_MAX_TOTAL_BYTES = 4 * 1024 * 1024;
+// 【与 protocol 常量同值 · 2026-10-27】浏览器侧不能直接引用 protocol 的构建期常量，
+// 这里保持 30 MiB / 50 MiB 与其一致；改一侧必须同时改另一侧（protocol/src/wiring.ts:238-239）。
+export const GAME_BUNDLE_MAX_FILE_BYTES = 30 * 1024 * 1024;
+export const GAME_BUNDLE_MAX_TOTAL_BYTES = 50 * 1024 * 1024;
 export const GAME_BUNDLE_MAX_PATH_LENGTH = 256;
 
 export const GAME_BUNDLE_TEXT_EXTENSIONS = Object.freeze([
@@ -257,6 +259,30 @@ export function generateSdkBootstrapSource(options) {
     const data = event && typeof event === 'object' && 'data' in event ? event.data : event;
     if (!data || typeof data !== 'object') return;
 
+    // 【主题下发 · v3】协议唯一契约：host.push 信封。
+    // { kind:'host.push', event:'theme', seq:<单增整数>, payload:{ mode:'light'|'dark', source:'dsh'|'os' } }
+    // 只接受经**已配对 MessagePort** 到达的推送；这条 port 是握手
+    // （event.source + 一次性 nonce + runtimeInstanceId 三者校验通过）之后才建立的，
+    // 来源天然可信，绝不为主题另开 window 消息监听。
+    // seq 单增：丢弃乱序/重复推送。
+    if (data.kind === 'host.push') {
+      if (data.event !== 'theme') return;
+      if (typeof data.seq !== 'number' || !Number.isSafeInteger(data.seq) || data.seq <= 0) return;
+      if (data.seq <= lastThemeSeq) return; // 乱序/重复
+      const payload = data.payload;
+      if (payload === null || typeof payload !== 'object') return;
+      const mode = payload.mode;
+      if (mode !== 'dark' && mode !== 'light') return;
+      const source = payload.source;
+      if (source !== 'dsh' && source !== 'os') return;
+      lastThemeSeq = data.seq;
+      currentTheme = mode;
+      for (const fn of [...themeListeners]) {
+        try { fn(mode, source); } catch (e) { console.error(e); }
+      }
+      return;
+    }
+
     if (typeof data.requestId === 'string') {
       const handler = pendingRequests.get(data.requestId);
       if (handler) {
@@ -275,11 +301,31 @@ export function generateSdkBootstrapSource(options) {
       return;
     }
 
+    if (data.type === 'lifecycle:control') {
+      const action = data.action;
+      if (action !== 'suspend' && action !== 'resume') return;
+      (async function() {
+        try {
+          let controlSnapshot;
+          if (action === 'suspend') {
+            clock.pause();
+            if (lifecycleHooks && typeof lifecycleHooks.pause === 'function') controlSnapshot = await lifecycleHooks.pause();
+          } else {
+            if (lifecycleHooks && typeof lifecycleHooks.resume === 'function') await lifecycleHooks.resume();
+            clock.resume();
+          }
+          boundPort.postMessage({bridgeVersion:1, requestId:'ack-' + data.controlId, method:'lifecycle.controlAck', payload:{controlId:data.controlId, generation:data.generation, ok:true,...(controlSnapshot === undefined ? {} : {snapshot:controlSnapshot})}});
+        } catch (error) {
+          boundPort.postMessage({bridgeVersion:1, requestId:'ack-' + data.controlId, method:'lifecycle.controlAck', payload:{controlId:data.controlId, generation:data.generation, ok:false, message:String(error)}});
+        }
+      })();
+      return;
+    }
+
     if (data.type === 'lifecycle:pause') {
       clock.pause();
       const generation = Number(data.generation) || 0;
-      (async function() {
-        try {
+      (async function() {        try {
           let snapshot = null;
           if (lifecycleHooks && typeof lifecycleHooks.pause === 'function') {
             snapshot = await lifecycleHooks.pause();
@@ -315,6 +361,15 @@ export function generateSdkBootstrapSource(options) {
 
   const queuedCalls = [];
 
+  // 【主题通道 · v3】主题只经**已配对的 MessagePort** 下发，绝不监听 window 的
+  // theme-change 字符串消息（可被任意来源伪造）。DSH 显式主题优先于 OS 偏好；
+  // preference === 'system' 时才跟随 OS。
+  let currentTheme = 'light';
+  /** 主题推送的已处理最大 seq（丢弃乱序/重复）。 */
+  let lastThemeSeq = 0;
+  /** @type {Set<(theme: string, source: string) => void>} */
+  const themeListeners = new Set();
+
   window.addEventListener('message', function onInitPort(event) {
     if (event.data && event.data.type === 'dsh-gamecenter:port' && event.ports && event.ports[0]) {
       window.removeEventListener('message', onInitPort);
@@ -339,6 +394,18 @@ export function generateSdkBootstrapSource(options) {
   }
 
   window.__DSH_GAMECENTER_SDK__ = {
+    wallet: {
+      command: function(input) {
+        if (!boundPort) return new Promise(function(resolve,reject) { queuedCalls.push(function() { window.__DSH_GAMECENTER_SDK__.wallet.command(input).then(resolve,reject); }); });
+        return sendRequest('wallet.command',input);
+      }
+    },
+    game: {
+      command: function(input) {
+        if (!boundPort) return new Promise(function(resolve,reject) { queuedCalls.push(function() { window.__DSH_GAMECENTER_SDK__.game.command(input).then(resolve,reject); }); });
+        return sendRequest('game.command', input);
+      }
+    },
     ai: {
       generate: function(request) {
         if (!boundPort) {
@@ -365,6 +432,22 @@ export function generateSdkBootstrapSource(options) {
           return Promise.reject(new Error('ai.cancel 必须提供 operationId'));
         }
         return sendRequest('ai.cancel', request);
+      }
+    },
+    // 【主题 · v3】当前主题（'light' | 'dark'）与订阅。
+    // 初值与变化都只来自已配对 MessagePort 上的协议 host.push 信封；
+    // DSH 显式主题（source='dsh'）优先于 OS 偏好（source='os'）。
+    theme: {
+      /** @returns {string} */
+      get: function() { return currentTheme; },
+      /**
+       * @param {(theme: string, source: 'dsh' | 'os') => void} listener
+       * @returns {() => void} 取消订阅
+       */
+      subscribe: function(listener) {
+        if (typeof listener !== 'function') return function() {};
+        themeListeners.add(listener);
+        return function() { themeListeners.delete(listener); };
       }
     },
     save: {
@@ -485,34 +568,40 @@ export function validateCssContent(css, sourceName) {
  * @param {string} html
  */
 export function validateHtmlSecurity(html) {
-  // 1. 禁止危险/未支持标签
-  const forbiddenTagMatch = html.match(/<\s*(iframe|object|embed|base|form|applet|frame|frameset)\b[^>]*>/i);
+  // 提取纯 HTML 标记骨架（剥离 script、style 内部代码与注释，避免 JS/CSS 中的比较运算符误判为 HTML 标签）
+  const htmlMarkupOnly = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '<script></script>')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '<style></style>')
+    .replace(/<!--[\s\S]*?-->/g, '');
+
+  // 1. 禁止危险/未支持标签（在纯 HTML 标记骨架中检索）
+  const forbiddenTagMatch = htmlMarkupOnly.match(/<\s*\/?\s*(iframe|object|embed|base|form|applet|frame|frameset)\b[^>]*>/i);
   if (forbiddenTagMatch) {
     throw new Error(`安全防御拦截: 严禁包含未受支持的标签: ${forbiddenTagMatch[0]}`);
   }
 
   // 2. 禁止 meta refresh 等跳转出口
-  if (/<meta\b[^>]*\bhttp-equiv\s*=\s*['"]?refresh\b/i.test(html)) {
+  if (/<meta\b[^>]*\bhttp-equiv\s*=\s*['"]?refresh\b/i.test(htmlMarkupOnly)) {
     throw new Error('安全防御拦截: 严禁包含 meta refresh 跳转出口');
   }
 
   // 3. 禁止 srcset 与 formaction 等未处理属性
-  if (/\bsrcset\s*=/i.test(html)) {
+  if (/\bsrcset\s*=/i.test(htmlMarkupOnly)) {
     throw new Error('安全防御拦截: 严禁包含 srcset 属性');
   }
-  if (/\bformaction\s*=/i.test(html)) {
+  if (/\bformaction\s*=/i.test(htmlMarkupOnly)) {
     throw new Error('安全防御拦截: 严禁包含 formaction 属性');
   }
 
   // 4. 校验内联 style="..." 属性内容
-  const inlineStyleMatches = html.matchAll(/\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi);
+  const inlineStyleMatches = htmlMarkupOnly.matchAll(/\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi);
   for (const sm of inlineStyleMatches) {
     const styleContent = sm[1] ?? sm[2] ?? '';
     validateCssContent(styleContent, 'style 属性');
   }
 
   // 5. 校验 <img> 标签：仅允许 data: URI，其余本地或远程引用在阶段1均显式拒绝
-  const imgMatches = html.matchAll(/<img\b([^>]*?)>/gi);
+  const imgMatches = htmlMarkupOnly.matchAll(/<img\b([^>]*?)>/gi);
   for (const m of imgMatches) {
     const attrs = m[1] ?? '';
     const srcMatch = attrs.match(/\bsrc\s*=\s*['"]?([^"'\s>]+)['"]?/i);
@@ -522,7 +611,7 @@ export function validateHtmlSecurity(html) {
   }
 
   // 6. 校验 SVG 中的远程引用（如 <image href="..." /> 或 <use href="..." />）
-  const svgRefMatch = html.match(/<\s*(?:image|use)\b[^>]*\b(?:href|xlink:href)\s*=\s*['"]?([^"'\s>]+)['"]?/i);
+  const svgRefMatch = htmlMarkupOnly.match(/<\s*(?:image|use)\b[^>]*\b(?:href|xlink:href)\s*=\s*['"]?([^"'\s>]+)['"]?/i);
   if (svgRefMatch && svgRefMatch[1] && !svgRefMatch[1].startsWith('data:') && !svgRefMatch[1].startsWith('#')) {
     throw new Error(`安全防御拦截: 严禁未转为 data: URI 的 SVG 外部资源引用: ${svgRefMatch[1]}`);
   }
@@ -635,6 +724,17 @@ export function assembleGameDocument({ entryPath, files, options }) {
       if (/(?:https?:|\/\/)/i.test(matchedFile.content) || /\btype\s*=\s*['"]?module['"]?/i.test(before + after)) {
         throw new Error(`安全防御拦截: 严禁在脚本中使用 module import 或远程 import (${targetPath})`);
       }
+    }
+
+    // 【ESM 产物拦截】内联进经典 <script> 的必须是已打包的 IIFE/UMD。
+    // 若游戏把**源码版 ESM**（含顶层 export）当成 dist 产物提交，内联后浏览器会报
+    // "Unexpected token 'export'" 这类难懂的语法错，且错误点在合成文档里、难以定位。
+    // 这里提前拦截并给出可操作的提示（请先打包成自包含产物）。
+    if (/(^|[\n;{}])\s*export\s+(default|const|let|var|function|class|\{|\*)/m.test(matchedFile.content)) {
+      throw new Error(
+        `安全防御拦截: ${targetPath} 含有顶层 export（ESM 源码），不能直接内联为经典脚本。` +
+          '请提交已打包的自包含产物（IIFE/UMD），或把该脚本声明为 type="module" 并改用模块化装配路径。',
+      );
     }
 
     return `<script data-inlined="${targetPath}"${before}${after}>\n/* inlined: ${targetPath} */\n${matchedFile.content}\n</script>`;

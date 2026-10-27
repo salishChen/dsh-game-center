@@ -1,8 +1,17 @@
-import { isSafeRelativePath, isSafePathSegment, type ErrorCode } from '@dsh-gamecenter/protocol'
+import {
+  isSafeRelativePath,
+  isSafePathSegment,
+  GAME_BUNDLE_MAX_FILE_BYTES,
+  GAME_BUNDLE_MAX_TOTAL_BYTES,
+  type ErrorCode,
+} from '@dsh-gamecenter/protocol'
 import type { InstallSourceFile, InstallSecurityLimits } from './types.js'
 
-export const DEFAULT_MAX_SINGLE_FILE_BYTES = 25 * 1024 * 1024 // 25MB
-export const DEFAULT_MAX_TOTAL_BYTES = 50 * 1024 * 1024 // 50MB
+// 【体积上限唯一真源 · 2026-10-27】以前这里独立写着 32 MiB / 64 MiB，而 protocol 的
+// GAME_BUNDLE_MAX_FILE_BYTES 是 30 MiB / 50 MiB —— 同一个包在下层放行、在上层被拒，
+// 报错文案还各说各的数。现在直接引用 protocol 常量，改一处即全链一致。
+export const DEFAULT_MAX_SINGLE_FILE_BYTES = GAME_BUNDLE_MAX_FILE_BYTES
+export const DEFAULT_MAX_TOTAL_BYTES = GAME_BUNDLE_MAX_TOTAL_BYTES
 export const DEFAULT_MAX_FILE_COUNT = 1000
 
 export interface SecurityCheckResult {
