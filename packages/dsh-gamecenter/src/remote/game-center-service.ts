@@ -158,6 +158,7 @@ export {
   type HttpFetcher,
   type InstallSourceFile,
 } from '@dsh-gamecenter/catalog'
+import { createResilientFetcher, describeFetchError } from './direct-http.js'
 import { SaveStore } from '../storage/save-store.ts'
 import { SqliteSaveBackend } from '../storage/sqlite-save-backend.ts'
 
@@ -1075,6 +1076,13 @@ export class GameCenterService extends Base {
   readonly installId?: string | undefined
   private reportClientPromise?: Promise<RemoteReportClient | undefined>
   private remoteCatalogProvider?: RemoteCatalogProvider
+  /**
+   * 后台/制品下载专用 fetcher：**先直连**（`node:http`/`node:https`，不读代理环境变量），
+   * 直连不通才回退到全局 `fetch`（那条会套 `HTTP_PROXY`）。原因见 `remote/direct-http.ts`
+   * 文件头：`NO_PROXY` 里的 CIDR 不被 undici 解析，内网后台曾被推给死代理，
+   * `fetch failed` 又被吞成「未找到审批记录」。
+   */
+  private readonly resilientFetcher: HttpFetcher = createResilientFetcher()
   private readonly aiBindings = new Map<string, AiModelBinding>()
   private readonly landlordTables = new Map<string, {game:LandlordState; traces:LandlordCallTrace[]; operations:Map<string,{input:string;result:any}>; pending?:{id:string;input:string;promise:Promise<any>;controller:AbortController}}>()
   private readonly arenaModes=new Map<string,{mode:'adventure'|'duel';roundId:string;operationId?:string;planJson?:string;aiPlan?:ArenaPlan;traces:ArenaAiTrace[];previousRound?:ArenaPreviousRound;result?:ArenaRoundResult}>()
@@ -1144,7 +1152,8 @@ export class GameCenterService extends Base {
           baseUrl,
           installId,
           client: 'dsh-gamecenter',
-          fetcher: this.catalogFetcher,
+          // 上报打到同一个内网后台，同样不能交给环境代理。
+          fetcher: this.catalogFetcher ?? this.resilientFetcher,
         })
       })()
     }
@@ -1462,7 +1471,7 @@ export class GameCenterService extends Base {
       this.remoteCatalogProvider ??= new RemoteCatalogProvider({
         baseUrl: this.catalogBaseUrl,
         token: this.catalogGithubToken,
-        fetcher: this.catalogFetcher,
+        fetcher: this.catalogFetcher ?? this.resilientFetcher,
         cacheStore: new FileCatalogCacheStore(
           path.join(this.gameLibraryDir, '.cache', 'catalogs', 'remote.json'),
         ),
@@ -1473,7 +1482,7 @@ export class GameCenterService extends Base {
         approvals: this.approvals,
         gameLibraryDir: this.gameLibraryDir,
         refresh: input?.refresh,
-        fetcher: this.catalogFetcher,
+        fetcher: this.catalogFetcher ?? this.resilientFetcher,
       })
     }
 
@@ -1483,7 +1492,7 @@ export class GameCenterService extends Base {
       gameLibraryDir: this.gameLibraryDir,
       fixtureEntries: this.catalogFixtureEntries,
       refresh: input?.refresh,
-      fetcher: this.catalogFetcher,
+      fetcher: this.catalogFetcher ?? this.resilientFetcher,
       githubOptions:
         this.catalogMode === 'github'
           ? {
@@ -1525,44 +1534,55 @@ export class GameCenterService extends Base {
     )
 
     // 远端模式（配置了 catalogBaseUrl）：向后台动态校验该版本是否已审核上架
+    //
+    // 【网络故障不得伪装成"未审批" · 2026-10-28】原来这段只在 `if (res.ok)` 里做匹配，
+    // 异常被 catch 成一句 console.warn 后继续往下走，最后统一落到 UNAPPROVED_RELEASE
+    // 「未找到…审批记录」。于是断网、代理挂掉、后台重启、404 全部长得一模一样，
+    // 排查方向每次都被带偏（实际只是 `NO_PROXY` 的 CIDR 没生效、请求被推给死代理）。
+    // 现在：连不上 / 非 2xx ⇒ `CATALOG_UNREACHABLE`；只有**请求成功且确实没有匹配条目**
+    // 才回 UNAPPROVED_RELEASE。
     if (!approval && (this.catalogMode === 'remote' || Boolean(this.catalogBaseUrl))) {
+      const baseUrl = (this.catalogBaseUrl || 'http://192.168.3.222:18080/v1').replace(/\/+$/, '')
+      const versionsUrl = `${baseUrl}/games/${encodeURIComponent(input.gameId)}/versions`
+      const unreachable = (detail: string) => ({
+        ok: false as const,
+        errorCode: 'CATALOG_UNREACHABLE',
+        message: `连不上游戏后台（${baseUrl}）：${detail}。这不是"未审批"，是网络或后台不可达。`,
+      })
       try {
-        const baseUrl = (this.catalogBaseUrl || 'http://192.168.3.222:18080/v1').replace(/\/+$/, '')
-        const versionsUrl = `${baseUrl}/games/${encodeURIComponent(input.gameId)}/versions`
-        const fetcher: HttpFetcher =
-          this.catalogFetcher ?? ((url: string, init?: RequestInit) => fetch(url, init))
+        const fetcher: HttpFetcher = this.catalogFetcher ?? this.resilientFetcher
         const res = await fetcher(versionsUrl, {
           method: 'GET',
           headers: { Accept: 'application/json' },
         })
-        if (res.ok) {
-          const body = (await res.json()) as any
-          const versions = Array.isArray(body) ? body : Array.isArray(body?.versions) ? body.versions : []
-          const matched = versions.find((v: any) => {
-            const commitMatch = v.commit === input.commit
-            const manifestMatch = v.manifestDigest === input.manifestDigest
-            const bundleMatch = v.bundleDigest === input.bundleDigest
-            const active = v.yanked !== true && v.approvalState !== 'rejected'
-            return commitMatch && manifestMatch && bundleMatch && active
-          })
-          if (matched && matched.repository) {
-            approval = {
-              gameId: input.gameId,
-              commit: input.commit,
-              repository: matched.repository,
-              manifestDigest: input.manifestDigest,
-              bundleDigest: input.bundleDigest,
-              approvedAt: matched.publishedAt || matched.updatedAt || new Date().toISOString(),
-              approvedBy: 'remote-backend',
-              approvalRecordPath: `remote://${input.gameId}/${input.commit}`,
-            }
-            if (!this.approvals.some(a => a.gameId === approval!.gameId && a.commit === approval!.commit)) {
-              this.approvals.push(approval)
-            }
+        if (!res.ok) return unreachable(`HTTP ${res.status}`)
+        const body = (await res.json()) as any
+        const versions = Array.isArray(body) ? body : Array.isArray(body?.versions) ? body.versions : []
+        const matched = versions.find((v: any) => {
+          const commitMatch = v.commit === input.commit
+          const manifestMatch = v.manifestDigest === input.manifestDigest
+          const bundleMatch = v.bundleDigest === input.bundleDigest
+          const active = v.yanked !== true && v.approvalState !== 'rejected'
+          return commitMatch && manifestMatch && bundleMatch && active
+        })
+        if (matched && matched.repository) {
+          approval = {
+            gameId: input.gameId,
+            commit: input.commit,
+            repository: matched.repository,
+            manifestDigest: input.manifestDigest,
+            bundleDigest: input.bundleDigest,
+            approvedAt: matched.publishedAt || matched.updatedAt || new Date().toISOString(),
+            approvedBy: 'remote-backend',
+            approvalRecordPath: `remote://${input.gameId}/${input.commit}`,
+          }
+          if (!this.approvals.some(a => a.gameId === approval!.gameId && a.commit === approval!.commit)) {
+            this.approvals.push(approval)
           }
         }
       } catch (err) {
-        console.warn('@dsh-gamecenter/host: 远端版本审批校验请求失败:', err)
+        // 畸形 JSON 与网络异常同样属于"后台这条路今天不可用"，一并如实上报。
+        return unreachable(describeFetchError(err))
       }
     }
 
@@ -1598,7 +1618,8 @@ export class GameCenterService extends Base {
       const fetchRes = await fetchCommitArtifacts({
         repository: approval.repository,
         commit: input.commit,
-        fetcher: this.catalogFetcher,
+        // GitHub 产物下载同样直连优先：死代理会把它变成"拉不到产物"，与"提交不存在"混淆。
+        fetcher: this.catalogFetcher ?? this.resilientFetcher,
         token: this.catalogGithubToken,
       })
       if (!fetchRes.ok || !fetchRes.bundledSource) {
