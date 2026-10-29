@@ -3,7 +3,7 @@
 // 只读 ROM，不写任何文件（除 --json 指定的输出路径）。
 //
 // 用法：
-//   node games/fe8-remake/tools/scan-backup-lib.mjs <rom.gba> [--json out.json]
+//   node games/sacred-stones/tools/scan-backup-lib.mjs <rom.gba> [--json out.json]
 //
 // 判定表（任天堂 GBA 备份库标准标识）：
 //   SRAM_V / SRAM_F_V*   -> SRAM，8 位总线，容量 32 KiB (0x8000)
