@@ -1,6 +1,6 @@
 # 存档桥与确定性回放（契约草案 v0）
 
-> 适用范围：`games/sacred-stones`。这份文档只定**游戏侧**职责；存储、配额、淘汰归平台（插件/后台）。
+> 适用范围：`games/fe8-remake`。这份文档只定**游戏侧**职责；存储、配额、淘汰归平台（插件/后台）。
 
 ## 1. 游戏侧只暴露三个动作
 
@@ -58,6 +58,6 @@ localStorage 全域 5 MB 且同步阻塞，会卡帧。
 
 ## 5. 当前状态
 
-- `src/save/save-pool.js`：已实现，`node --test games/sacred-stones/test/save-pool.test.mjs` → 9 pass / 0 fail。
+- `src/save/save-pool.js`：已实现，`node --test games/fe8-remake/test/save-pool.test.mjs` → 9 pass / 0 fail。
 - `snapshot()` / `restore()` / `meta()`：等路线 R/W 定案后对接（形状已冻结，见 §1）。
 - 鲸鲸币：走 `exchange`（游戏内金币由战斗产出，鲸币只是充值入口，1 鲸币 = 10 金币），游戏侧只上报事件，金额与上限在平台侧。
