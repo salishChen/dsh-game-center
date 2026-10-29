@@ -21,6 +21,23 @@ importers:
         specifier: 5.7.3
         version: 5.7.3
 
+  games/cat-arena:
+    dependencies:
+      matter-js:
+        specifier: 0.20.0
+        version: 0.20.0
+
+  games/crazy-flasher4: {}
+
+  games/fe8-remake:
+    dependencies:
+      '@gba-kit/arm-emulator':
+        specifier: 0.8.0
+        version: 0.8.0
+      '@gba-kit/gba-emulator':
+        specifier: 0.8.0
+        version: 0.8.0
+
   packages/dsh-gamecenter:
     dependencies:
       '@deepseek-ai/dsh-typert-protocol':
@@ -43,6 +60,10 @@ importers:
         version: link:../protocol
 
   packages/dsh-gamecenter-client:
+    dependencies:
+      '@dsh-gamecenter/protocol':
+        specifier: workspace:*
+        version: link:../protocol
     devDependencies:
       esbuild:
         specifier: 0.28.2
@@ -242,6 +263,15 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@gba-kit/arm-emulator@0.8.0':
+    resolution: {integrity: sha512-x2pmVV/D5OaMRY7KJzNWwB6MpuZFewmkxjwMLJnj5MaEOZQfGEtehjCcfpZex+FEcITjgwMA1gL7TO07tjNmuA==}
+
+  '@gba-kit/debug-info@0.8.0':
+    resolution: {integrity: sha512-4mHLCnKaACXxoP8LXGXAIJyCax+aoXqQHQdJI02aSaBfDJmU61f//Q4oqW/7LTrB74X6CK4WUU+q1paJMWCGBQ==}
+
+  '@gba-kit/gba-emulator@0.8.0':
+    resolution: {integrity: sha512-sZ82nkSfXgVyAiYXsZ6MjO3wCL9s8ahyCVhvGzccjZvzkt15cLUa2L7d036Um5VN60ZxHB+QH36byO631ViNYg==}
+
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
@@ -249,6 +279,9 @@ packages:
     resolution: {integrity: sha512-HKVLS8dvII+xoKW9kmqxbRKrnWEXfJJr/FZhhJmiqIB0e053QNYFqOBouTMO/k5sID4MvCiUCvv8b9M4h32wIA==}
     engines: {node: '>=18'}
     hasBin: true
+
+  matter-js@0.20.0:
+    resolution: {integrity: sha512-iC9fYR7zVT3HppNnsFsp9XOoQdQN2tUyfaKg4CHLH8bN+j6GT4Gw7IH2rP0tflAebrHFw730RR3DkVSZRX8hwA==}
 
   typescript@5.7.3:
     resolution: {integrity: sha512-84MVSjMEHP+FQRPy3pX9sTVV/INIex71s9TL2Gm5FG/WG1SqXeKyZ0k7/blY/4FdOzI12CBy1vGc4og/eus0fw==}
@@ -355,6 +388,15 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
+  '@gba-kit/arm-emulator@0.8.0': {}
+
+  '@gba-kit/debug-info@0.8.0': {}
+
+  '@gba-kit/gba-emulator@0.8.0':
+    dependencies:
+      '@gba-kit/arm-emulator': 0.8.0
+      '@gba-kit/debug-info': 0.8.0
+
   '@standard-schema/spec@1.1.0': {}
 
   esbuild@0.28.2:
@@ -385,6 +427,8 @@ snapshots:
       '@esbuild/win32-arm64': 0.28.2
       '@esbuild/win32-ia32': 0.28.2
       '@esbuild/win32-x64': 0.28.2
+
+  matter-js@0.20.0: {}
 
   typescript@5.7.3: {}
 

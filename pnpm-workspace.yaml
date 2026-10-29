@@ -1,4 +1,6 @@
 packages:
   - 'packages/*'
-  # 阶段1 端到端集成测试（跨包聚合，不发布）
+  - 'games/cat-arena'
+  - 'games/crazy-flasher4'
+  - 'games/fe8-remake'
   - 'tests/*'
