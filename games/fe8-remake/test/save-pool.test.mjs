@@ -5,6 +5,7 @@ import {
   AUTO_POOL_LIMIT,
   checksumOf,
   createSavePool,
+  byteSizeOf as sizeOf,
 } from '../src/save/save-pool.js';
 
 /** 测试用内存存储：只做存取，不含任何策略。 */
@@ -181,6 +182,9 @@ test('存档元信息带齐 slot/pool/reason/createdAt/gameVersion/bytes/checksu
   assert.equal(meta.reason, 'manual');
   assert.equal(meta.gameVersion, '1.0.0');
   assert.equal(typeof meta.createdAt, 'number');
-  assert.equal(meta.bytes, JSON.stringify({ abc: 1 }).length);
-  assert.equal(meta.checksum, checksumOf({ abc: 1 }));
+  // bytes 现在是「原始字节数」（键 + 值），不是 JSON 文本长度：
+  // 存档是纯对象 + TypedArray，JSON 长度既不准也不慢得离谱得离谱
+  assert.equal(meta.bytes, sizeOf({abc: 1}));
+  assert.equal(meta.bytes, 'abc'.length + 8);
+  assert.equal(meta.checksum, checksumOf({abc: 1}));
 });

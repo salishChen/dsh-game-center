@@ -18,21 +18,24 @@
  * Meta = {slot, pool:'manual'|'auto', reason, createdAt, gameVersion, bytes, checksum}
  */
 
+import {digestOf, sizeOf} from './digest.js';
+
 export const SAVE_SCHEMA = 1;
 export const AUTO_POOL_LIMIT = 20;
 export const REASONS = Object.freeze(['manual', 'auto', 'close']);
 
-/** 无加密的稳定摘要，只用来发现截断/损坏，不是安全边界。 */
+/**
+ * 无加密的稳定摘要，只用来发现截断/损坏，不是安全边界。
+ * 走 digest.js 的规范遍历，TypedArray 直接吃字节（存档是纯对象 + TypedArray，
+ * 不能 JSON.stringify：几十万键、键序还会让同一状态算出两种摘要）。
+ */
 export function checksumOf(payload) {
-  const text = typeof payload === 'string' ? payload : JSON.stringify(payload);
-  let h1 = 0x9e3779b9;
-  let h2 = 0x85ebca6b;
-  for (let i = 0; i < text.length; i += 1) {
-    const c = text.charCodeAt(i);
-    h1 = (Math.imul(h1 ^ c, 0x01000193) >>> 0);
-    h2 = (Math.imul(h2 + c, 0x27d4eb2d) >>> 0);
-  }
-  return `c1:${h1.toString(16).padStart(8, '0')}${h2.toString(16).padStart(8, '0')}`;
+  return digestOf(payload);
+}
+
+/** 存档的原始字节数（不是 JSON 文本长度）。 */
+export function byteSizeOf(payload) {
+  return sizeOf(payload);
 }
 
 function byCreatedAsc(a, b) {
@@ -110,7 +113,7 @@ export function createSavePool(options) {
           name: name ?? null,
           createdAt,
           gameVersion: gameVersion(),
-          bytes: typeof payload === 'string' ? payload.length : JSON.stringify(payload ?? null).length,
+          bytes: byteSizeOf(payload ?? null),
           checksum: checksumOf(payload ?? null),
           schema: SAVE_SCHEMA,
         };
