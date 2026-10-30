@@ -1,15 +1,20 @@
 {
   "rom_sha256": "167ed57921c24f841108f46eabc33cb10e10f141b09d0fa6e75b5c5add3e4df0",
+  "scope": "header_byte==0x10 strict AND dlen>=32",
   "vram_bin": ".botharness/blocks-preview/vram-tiles.bin",
   "vram_tile_slots": 3072,
   "vram_unique_tiles": 1611,
   "candidate_blocks": 4454,
-  "decoded_blocks": 4454,
-  "decode_failures": 0,
+  "header_assert_failures": 0,
+  "skipped_dlen_lt_32": 4,
+  "decoded_blocks": 4450,
   "tile_sha_unique": 238373,
   "joined_tiles": 1477,
   "vram_tiles_unmatched": 134,
-  "unmatched_sample": [
+  "unmatched_plain_in_rom": 0,
+  "unmatched_absent_from_rom": 134,
+  "plain_examples": [],
+  "absent_sample": [
     "0447e2cda2ca70c47d1edfd62038b958bdafd52b20a9857a7d9b7d1b3d829c51",
     "0648e462e146fa7ab4e0ec08724ecb69139b35fd2bd6145c78938973c41427f9",
     "07ea5ed2b52d59acb90d17c324e4c9f0fee41c4263f6a64bb4ba6574f787a50f",
@@ -22,7 +27,7 @@
     "19531be7dccaa0f94dbdb268253a933704039d70fe8fc39463c0943ef8200267"
   ],
   "joined_blocks": 342,
-  "caveat": "帧 900 标题画面单帧；未命中不等于不存在（可能在别的帧加载、运行时拼装或被补丁改过）。uses=VRAM 内相同内容槽位数（下界）。",
+  "caveat": "帧 900 标题画面单帧，单帧只算下界；uses=VRAM 内相同内容槽位数。",
   "top_blocks": [
     {
       "offset": "0xB5EFDC",

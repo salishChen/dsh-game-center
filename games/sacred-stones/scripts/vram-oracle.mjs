@@ -67,10 +67,19 @@ const uniform = (tile) => {
 };
 
 const vramTiles = new Map();
+// 同一图块会铺满整屏，**用量**本身是信息（共享空图块 vs 唯一美术图），
+// 所以单独统计每个哈希在 VRAM 里占了多少个槽位。
+const vramTileUsage = new Map();
+// 连接键用**完整 sha256**，不用 sha1 前缀：前缀只适合当回归夹具，
+// 当连接键就是自找撞库风险，而换完整 sha256 是零成本的。
+const vramTileSha256 = new Map();
 for (let t = 0; t < vramBytes.length / 32; t += 1) {
   const tile = vramBytes.subarray(t * 32, t * 32 + 32);
   if (uniform(tile)) continue;
+  const full = createHash('sha256').update(tile).digest('hex');
   vramTiles.set(hash32(tile), t);
+  vramTileUsage.set(full, (vramTileUsage.get(full) ?? 0) + 1);
+  if (!vramTileSha256.has(full)) vramTileSha256.set(full, t);
 }
 
 const rows = readFileSync(listPath, 'utf8')
@@ -144,6 +153,25 @@ if (fixturePath) {
   };
   writeFileSync(resolve(fixturePath), `${JSON.stringify(fixture, null, 2)}\n`);
   console.log(`fixture → ${resolve(fixturePath)}（${tiles.length} 个图块哈希）`);
+}
+
+// --hit-set <path>：导出「这一帧 VRAM 命中集合」，供与候选块清单按内容 sha256 连接。
+// 列：sha256<TAB>vramSlots<TAB>firstTileIndex（按 sha256 升序，便于 diff）
+const hitSetPath = argOf('hit-set', null);
+if (hitSetPath) {
+  const rows = [...vramTileUsage.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([sha, slots]) => `${sha}	${slots}	${vramTileSha256.get(sha)}`);
+  const header = [
+    '# 帧 900 VRAM 图块命中集合（唯一图块，非纯色 32 字节）',
+    `# frames=${frames}`,
+    '# columns=sha256,vramSlots,firstTileIndex',
+    '# joinKey=sha256（完整，不用 sha1 前缀）',
+    '# note=这是单帧下界：某图块未命中不等于 ROM 里没有，只说明这一帧没用到',
+    `# rows=${rows.length}`,
+  ];
+  writeFileSync(resolve(hitSetPath), [...header, ...rows].join(String.fromCharCode(10)) + String.fromCharCode(10));
+  console.log(`hit-set → ${resolve(hitSetPath)}（${rows.length} 个唯一图块）`);
 }
 
 console.log(JSON.stringify(summary, null, 2));
