@@ -18,6 +18,7 @@ import {bootKernel} from '../src/app/boot.js';
 import {parseBgcnt, renderTextBg, backdropColor} from '../src/extract/bg-render.js';
 import {renderObjLayer} from '../src/extract/obj-render.js';
 import {parseBldcnt, blend5, rgbaTo5, write5To, BLEND_MODE} from '../src/extract/color.js';
+import {shouldBlend} from '../src/extract/composite.js';
 import {encodePng} from '../src/extract/png.js';
 import {compareFrames} from './compare-frame.mjs';
 
@@ -41,11 +42,10 @@ if (!existsSync(romPath)) {
 
 const rom = new Uint8Array(readFileSync(romPath));
 const gba = bootKernel(rom);
-for (let i = 0; i < frames; i += 1) gba.runFrame();
-// 关键：游戏在 VBlank 里改寄存器，所以"帧末读到的寄存器"描述的很可能是**下一帧**。
-// 做法是先在 N 帧处拍下寄存器与内存，再跑一帧取 framebuffer——那一帧的画面是用 N 帧
-// 的寄存器渲染的，两者才对应。--stable-check 可以打印相邻帧寄存器是否变化。
-if (!args.includes('--no-extra-frame')) gba.runFrame();
+// 寄存器时序（这一条决定整屏 oracle 是否有意义）：
+//   游戏在 **VBlank** 里改 DISPCNT/BLDCNT，所以"跑完 N 帧后读到的寄存器"是给 **第 N+1 帧** 用的。
+//   要拿"和第 N 帧画面配套的寄存器"，必须在第 N-1 帧结束时读，然后跑第 N 帧取 framebuffer。
+for (let i = 0; i < Math.max(0, frames - 1); i += 1) gba.runFrame();
 
 const bus = gba.bus;
 const mmio = bus.mmioRegisters;
@@ -63,7 +63,9 @@ const vram = Uint8Array.from(bus.vram);
 const palette = Uint8Array.from(bus.palette);
 const oam = Uint8Array.from(bus.oam);
 
-const fb = gba.ppu.getFramebuffer();
+const fbSnapshot = () => gba.ppu.getFramebuffer();
+gba.runFrame();
+const fb = fbSnapshot();
 const oracle = {width: 240, height: 160, rgba: new Uint8Array(Buffer.from(fb.buffer, fb.byteOffset, fb.byteLength))};
 
 // 真实帧就是硬件画的，不能改寄存器重渲染；这里只用它当参照。
@@ -95,7 +97,16 @@ const backdrop = backdropColor(palette);
 const objLayer = withObj ? renderObjLayer({oam, vram, palette, dispcnt, backdrop: null}) : null;
 
 const out = new Uint8Array(W * H * 4);
+// blendedPixels 的口径必须写死，否则三个人说的"混合像素数"是三个意思：
+//   branch   (a) 执行了混合分支的像素数（当前 blendedPixels 就是这个）
+//   changed  (b) 混合结果 != 第一目标原值 的像素数（同色重叠会被排除，故 (b) <= (a)）
+//   exactHalf (c) 输出恰好 == (第一目标+第二目标)>>1 的像素数（逐通道，5 位域）
 let blendedPixels = 0;
+let blendChanged = 0;
+let blendExactHalf = 0;
+// 为了和逆向的 ab_test 三个字段对账：BG1 不透明像素数、其中"下方存在第二目标层"的像素数。
+let bg1Opaque = 0;
+let bg1WithSecondBelow = 0;
 for (let i = 0; i < W * H; i += 1) {
   const at = i * 4;
   // 自下而上找最上面两层可见内容
@@ -105,7 +116,15 @@ for (let i = 0; i < W * H; i += 1) {
     stack.push({kind: 'bg', layer, rgba: layer.image.rgba, priority: layer.priority, isFirst: layer.isFirst, isSecond: layer.isSecond});
   }
   if (objLayer && objLayer.rgba[at + 3] !== 0) {
-    stack.push({kind: 'obj', rgba: objLayer.rgba, priority: 0, isFirst: false, isSecond: false});
+    stack.push({
+      kind: 'obj',
+      rgba: objLayer.rgba,
+      // 每个精灵有自己的 priority；取整层的逐像素优先级表，不能一律当 0。
+      priority: objLayer.priorityMap[i] === 0xff ? 0 : objLayer.priorityMap[i],
+      isFirst: Boolean(bld.targetObj),
+      isSecond: Boolean(bld.secondTargetObj),
+      objMode: 'normal',
+    });
   }
   stack.sort((a, b) => (a.priority - b.priority) || (a.kind === 'obj' ? -1 : 1));
 
@@ -122,7 +141,18 @@ for (let i = 0; i < W * H; i += 1) {
   const belowIsSecond = below ? below.isSecond : Boolean(bld.secondTargetBackdrop);
   const belowRgba = below ? [below.rgba[at], below.rgba[at + 1], below.rgba[at + 2]] : backdrop;
 
-  if (top.isFirst && mode !== BLEND_MODE.NONE && belowIsSecond && (eva > 0 || evb > 0 || mode !== BLEND_MODE.ALPHA)) {
+  const topIsBg1 = top.kind === 'bg' && top.layer && top.layer.index === 1;
+  if (topIsBg1) {
+    bg1Opaque += 1;
+    if (below && below.isSecond) bg1WithSecondBelow += 1;
+  }
+
+  if (mode !== BLEND_MODE.NONE && shouldBlend({
+    topIsFirst: Boolean(top.isFirst),
+    belowExists: Boolean(below),
+    belowIsSecond,
+    backdropInSecond: Boolean(bld.secondTargetBackdrop),
+  })) {
     // 真机在 5 位域做混合（GBATEK）：先降到 5 位、混完再展开，才是硬件口径。
     const top5 = rgbaTo5(rgba, 0);
     const below5 = rgbaTo5(belowRgba, 0);
@@ -131,6 +161,10 @@ for (let i = 0; i < W * H; i += 1) {
     write5To(out5, 0, blended);
     rgba = [out5[0], out5[1], out5[2]];
     blendedPixels += 1;
+    if (out5[0] !== top5[0] || out5[1] !== top5[1] || out5[2] !== top5[2]) blendChanged += 1;
+    if (out5[0] === (top5[0] + below5[0]) >> 1
+      && out5[1] === (top5[1] + below5[1]) >> 1
+      && out5[2] === (top5[2] + below5[2]) >> 1) blendExactHalf += 1;
   }
   out[at] = rgba[0];
   out[at + 1] = rgba[1];
@@ -169,6 +203,14 @@ const summary = {
   witness: {
     layersDrawn: layers.map((l) => l.index),
     blendedPixels,
+    blendStats: {
+      branch: blendedPixels,
+      changed: blendChanged,
+      exactHalf: blendExactHalf,
+      bg1Opaque,
+      bg1WithSecondBelow,
+      definition: 'branch=(a) 执行混合分支; changed=(b) 结果≠第一目标原值; exactHalf=(c) 结果==(top+below)>>1（5 位域逐通道）',
+    },
     objPainted: objLayer ? objLayer.paintedPixels : 0,
     colorCount: new Set(Array.from({length: W * H}, (_, i) => (out[i * 4] << 16) | (out[i * 4 + 1] << 8) | out[i * 4 + 2])).size,
   },

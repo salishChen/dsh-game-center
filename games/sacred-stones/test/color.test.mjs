@@ -100,3 +100,20 @@ test('parseBldcnt：特效模式 2/3 与 OBJ 段', () => {
   assert.equal(fx.secondTargetObj, true);
   assert.equal(fx.mode, BLEND_MODE.DARKEN);
 });
+
+// BLDCNT 的位展开一律由脚本打印后复制，不靠手算——同一个下午在 bit13 和 bits8-13 上
+// 各错一次，说明"手算位布局"这个动作本身就不该存在。
+test('parseBldcnt(0x0c42) 的结构必须被断言，而不是被讨论', () => {
+  const bld = parseBldcnt(0x0c42);
+  assert.deepEqual(bld.targetsBg, [1], '第一目标 BG1');
+  assert.equal(bld.mode, 1, 'alpha');
+  assert.deepEqual(bld.secondTargetsBg, [2, 3], '第二目标 BG2|BG3（不是 BG0|BG1）');
+  assert.equal(bld.secondTargetBackdrop, false, 'BD（bit13）未置');
+});
+
+test('parseBldcnt(0x0340) 的位展开（帧 3200 实测值）', () => {
+  const bld = parseBldcnt(0x0340);
+  assert.deepEqual(bld.targetsBg, [], '第一目标为空');
+  assert.equal(bld.mode, 1);
+  assert.deepEqual(bld.secondTargetsBg, [0, 1], '第二目标 BG0|BG1');
+});

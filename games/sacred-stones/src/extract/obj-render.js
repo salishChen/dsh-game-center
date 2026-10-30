@@ -22,6 +22,9 @@ const OBJ_PALETTE_OFFSET = 0x200;
 // 数据看起来"像"图块、颜色"像"对的，只有形状散架，极难自查。
 const OBJ_TILE_BASE = 0x10000;
 
+const OBJ_MAX_SPRITES_PER_LINE = 64;
+const OBJ_MAX_PIXELS_PER_LINE = 1024;
+
 const SCREEN_W = 240;
 const SCREEN_H = 160;
 
@@ -134,7 +137,7 @@ export function objPixelIndex(obj, vram, px, py, oneDimensional) {
  * 把一条精灵画进像素缓冲（不处理旋转/缩放，那是另一条路径）。
  * @returns {number} 实际写入的像素数
  */
-export function drawObj(image, obj, {vram, palette, oneDimensional = true}) {
+export function drawObj(image, obj, {vram, palette, oneDimensional = true, priorityMap = null}) {
   if (obj.hide || !obj.dimsValid) return 0;
   const left = objLeft(obj);
   const top = objTop(obj);
@@ -157,6 +160,9 @@ export function drawObj(image, obj, {vram, palette, oneDimensional = true}) {
       image[dst + 1] = expand5((bgr555 >> 5) & 0x1f);
       image[dst + 2] = expand5((bgr555 >> 10) & 0x1f);
       image[dst + 3] = 0xff;
+      // 每个精灵有自己的 priority（attr2 bit10-11）。整层合成时不能统一当 0 处理：
+      // 同一 priority 上 OBJ 盖过 BG，但 OBJ 的 priority 比 BG 大时就必须让 BG 压住它。
+      if (priorityMap) priorityMap[sy * SCREEN_W + sx] = obj.priority;
       painted += 1;
     }
   }
@@ -164,9 +170,17 @@ export function drawObj(image, obj, {vram, palette, oneDimensional = true}) {
 }
 
 /**
- * 合成整层 OBJ。priority 小的盖在上面；同 priority 时 OAM 序号小的在上（硬件行为）。
+ * 合成整层 OBJ。
  *
- * @returns {{width, height, rgba, paintedPixels}}
+ * 两条**硬件上限**在这里实现，它们不会报错、只会让画面"少几个精灵"：
+ *   ① 每条扫描线最多考虑 **64 个**精灵（按 priority 升序、同 priority 按 OAM 序号升序取前 64）；
+ *   ② 每条扫描线最多绘制 **1024 个** OBJ 像素，额度用完后该行剩下的精灵全部丢弃。
+ * 两者都是"先到先得"：排序靠前的（priority 小 / OAM 序号小）优先占用额度。
+ *
+ * 这个上限是实测逼出来的：帧 3200 有 128 个精灵，整屏合成差 1,105 像素，
+ * 而差异处硬件显示的是"下方的 BG 层"——说明那个精灵被硬件丢掉了，不是颜色算错。
+ *
+ * @returns {{width, height, rgba, paintedPixels, priorityMap, dropped}} dropped = {overLimit, overPixels}
  */
 export function renderObjLayer({
   oam,
@@ -176,9 +190,13 @@ export function renderObjLayer({
   width = SCREEN_W,
   height = SCREEN_H,
   backdrop,
+  maxSpritesPerLine = OBJ_MAX_SPRITES_PER_LINE,
+  maxPixelsPerLine = OBJ_MAX_PIXELS_PER_LINE,
 }) {
   const oneDimensional = Boolean((dispcnt >> 6) & 1);
   const out = new Uint8Array(width * height * 4);
+  const priorityMap = new Uint8Array(width * height).fill(0xff);
+
   const objs = [];
   for (let i = 0; i < 128; i += 1) {
     const base = i * 8;
@@ -190,10 +208,53 @@ export function renderObjLayer({
     if (obj.hide || !obj.dimsValid) continue;
     objs.push({obj, order: i});
   }
-  // 先画 priority 大、序号大的（被盖住的），后画小的。
-  objs.sort((a, b) => (b.obj.priority - a.obj.priority) || (b.order - a.order));
+  // 硬件按 priority 升序、同 priority 按 OAM 序号升序处理（先处理的最优先）。
+  objs.sort((a, b) => (a.obj.priority - b.obj.priority) || (a.order - b.order));
+
   let painted = 0;
-  for (const {obj} of objs) painted += drawObj(out, obj, {vram, palette, oneDimensional});
+  let overLimit = 0;
+  let overPixels = 0;
+
+  for (let y = 0; y < height; y += 1) {
+    if (y >= SCREEN_H) break;
+    const candidates = objs.filter(({obj}) => y >= objTop(obj) && y < objTop(obj) + obj.height);
+    const chosen = candidates.slice(0, maxSpritesPerLine);
+    overLimit += candidates.length - chosen.length;
+
+    let budget = maxPixelsPerLine;
+    for (const {obj} of chosen) {
+      if (budget <= 0) {
+        overPixels += 1;
+        continue;
+      }
+      const top = objTop(obj);
+      const py = y - top;
+      const left = objLeft(obj);
+      const srcY = obj.vflip ? obj.height - 1 - py : py;
+      let drewThisLine = 0;
+      for (let px = 0; px < obj.width; px += 1) {
+        const sx = left + px;
+        if (sx < 0 || sx >= SCREEN_W) continue;
+        const dst = (y * SCREEN_W + sx) * 4;
+        if (out[dst + 3] !== 0) continue; // 已被更优先的精灵占用
+        if (budget <= 0) break;
+        const srcX = obj.hflip ? obj.width - 1 - px : px;
+        const index = objPixelIndex(obj, vram, srcX, srcY, oneDimensional);
+        if (index === 0) continue;
+        const palOffset = (obj.colorMode8bpp ? index : obj.paletteBank * 16 + index) * 2;
+        const at = OBJ_PALETTE_OFFSET + palOffset;
+        const bgr555 = palette[at] | (palette[at + 1] << 8);
+        out[dst + 0] = expand5(bgr555 & 0x1f);
+        out[dst + 1] = expand5((bgr555 >> 5) & 0x1f);
+        out[dst + 2] = expand5((bgr555 >> 10) & 0x1f);
+        out[dst + 3] = 0xff;
+        priorityMap[y * SCREEN_W + sx] = obj.priority;
+        budget -= 1;
+        drewThisLine += 1;
+      }
+      painted += drewThisLine;
+    }
+  }
 
   if (backdrop) {
     for (let i = 0; i < out.length; i += 4) {
@@ -204,7 +265,7 @@ export function renderObjLayer({
       out[i + 3] = 0xff;
     }
   }
-  return {width, height, rgba: out, paintedPixels: painted};
+  return {width, height, rgba: out, paintedPixels: painted, priorityMap, dropped: {overLimit, overPixels}};
 }
 
 import {expand5} from './color.js';

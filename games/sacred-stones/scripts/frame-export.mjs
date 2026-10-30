@@ -39,7 +39,12 @@ const hex = (n, width = 4) => `0x${(n >>> 0).toString(16).padStart(width, '0')}`
 
 const rom = new Uint8Array(readFileSync(romPath));
 const gba = bootKernel(rom);
-for (let i = 0; i < frames; i += 1) gba.runFrame();
+// 寄存器时序（本项目踩过的坑，务必保持）：
+// 游戏在 VBlank 里写 DISPCNT/BGxCNT/BGxHOFS/BGxVOFS/BLDCNT，所以"跑完第 N 帧之后读到的寄存器"
+// 是给**第 N+1 帧**用的。要让 dump 里寄存器和"第 N 帧那张图"配得上，必须：
+//   跑 N-1 帧 → 快照寄存器/内存 → 再跑 1 帧（得到第 N 帧的画面）
+// 之前写成"跑 N 帧再快照"，dump 出来的寄存器比图晚一帧，静态渲染器据此拼出来的就是错帧。
+for (let i = 0; i < frames - 1; i += 1) gba.runFrame();
 
 const bus = gba.bus;
 const mmio = bus.mmioRegisters;
@@ -48,6 +53,7 @@ const mmio = bus.mmioRegisters;
 // BLDCNT 在 0x50、BLDALPHA 0x52、BLDY 0x54。按"寄存器序号"读会读成另一件事（踩过）。
 const u16 = (at) => mmio[at] | (mmio[at + 1] << 8);
 
+// vram/palette 必须与寄存器来自同一时刻：这里取的是"第 N 帧渲染所用"的那一份。
 const vram = new Uint8Array(bus.vram);
 const palette = new Uint8Array(bus.palette);
 
