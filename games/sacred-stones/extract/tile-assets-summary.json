@@ -1,7 +1,10 @@
 {
   "rom_sha256": "167ed57921c24f841108f46eabc33cb10e10f141b09d0fa6e75b5c5add3e4df0",
   "scope": "header_byte==0x10 strict AND dlen>=32",
-  "vram_bin": ".botharness/blocks-preview/vram-tiles.bin",
+  "vram_source": "extract/frame900.json",
+  "frame": 900,
+  "vram_sha256": "73025edad92f1ad299a610dfb8884587a51215599ec18dbf999b879ac4f4bade",
+  "dump_self_sha256": "007cc64526853d8faf0512902fdeea92559c5971db76728ed9f86abb45915493",
   "vram_tile_slots": 3072,
   "vram_unique_tiles": 1611,
   "candidate_blocks": 4454,
@@ -15,16 +18,16 @@
   "unmatched_absent_from_rom": 134,
   "plain_examples": [],
   "absent_sample": [
-    "0447e2cda2ca70c47d1edfd62038b958bdafd52b20a9857a7d9b7d1b3d829c51",
+    "030cbb36c7cfbfbd786a634a2bdd4c119740cd18d6e2443821ba49c04e650302",
     "0648e462e146fa7ab4e0ec08724ecb69139b35fd2bd6145c78938973c41427f9",
-    "07ea5ed2b52d59acb90d17c324e4c9f0fee41c4263f6a64bb4ba6574f787a50f",
     "08a01734eefb8dd99adbdb3b674791a59ce28d0d102afed4c15b0cf661453b08",
     "0a903f832c43efbcf2350d93f51653ab37f7c156321b8c5c0da3a20e0480df2b",
     "0caa768f20fec68ede30a4c37388639a765934c02843369b8797fe64fcfc1c25",
     "0ec7411a0000acdb3f129d46016981dc6f2039e4b4d438934f479c59a5d39b24",
     "13c99612b1913a123b64b3e7553ec0007761af906c68fea4a8129388dad6fae0",
-    "17367dde94c2f31ecd4e1c7981ec8bb9804ceb577085bc17e640ff5f1d718e85",
-    "19531be7dccaa0f94dbdb268253a933704039d70fe8fc39463c0943ef8200267"
+    "17a5f2be1d46737129f4d59ebdb5d71115649836a75531ad5a9addb0c032ca3f",
+    "1a00cf42a5c691c2cee90ccc87039cb8871b67cc241bf562b3d7f363627bd626",
+    "1cf9956b45172c51ac28e1ef0c4b364b4064d5c2f8bf177d2cb342e9a2cb3046"
   ],
   "joined_blocks": 342,
   "caveat": "帧 900 标题画面单帧，单帧只算下界；uses=VRAM 内相同内容槽位数。",
@@ -114,7 +117,7 @@
       "matched": 20
     },
     {
-      "offset": "0xB5D3F4",
+      "offset": "0xB5EDE8",
       "dlen": 1280,
       "refs": 1,
       "tiles": 18,

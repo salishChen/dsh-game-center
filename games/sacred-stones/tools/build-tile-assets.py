@@ -1,13 +1,13 @@
 # 图块资产表（严格口径：头字节 == 0x10 且 dlen>=32）
-# 输入：ROM、extract/lz77-candidates.json、.botharness/blocks-preview/vram-tiles.bin
+# 输入：ROM、extract/lz77-candidates.json、extract/frame900.json（vram_base64，带 vram_sha256）
 # 输出：extract/tile-assets.tsv、extract/tile-assets-summary.json
 # 附带：未匹配 VRAM 图块的"明文 blob"二分搜索（ROM 里有没有这 32 字节）
-import hashlib, json, os
+import base64, hashlib, json, os
 
 ROOT = r"C:\Users\salis\Desktop\dsh-game-boy"
 ROM = os.path.join(ROOT, "artifacts/fe8-remake/fe8-zh.gba")
 CAND = os.path.join(ROOT, "games/sacred-stones/extract/lz77-candidates.json")
-VRAM = os.path.join(ROOT, ".botharness/blocks-preview/vram-tiles.bin")
+DUMP = os.path.join(ROOT, "games/sacred-stones/extract/frame900.json")
 OUT_TSV = os.path.join(ROOT, "games/sacred-stones/extract/tile-assets.tsv")
 OUT_JSON = os.path.join(ROOT, "games/sacred-stones/extract/tile-assets-summary.json")
 SCOPE_DLEN = 32
@@ -55,7 +55,9 @@ def lz77(rom, off):
 
 def main():
     rom = open(ROM, "rb").read()
-    vram = open(VRAM, "rb").read()
+    d = json.load(open(DUMP, encoding="utf-8"))
+    vram = base64.b64decode(d["vram_base64"])
+    vram_sha = hashlib.sha256(vram).hexdigest()
     slots, slot_bytes = {}, {}
     for t in range(0, len(vram) - 31, 32):
         tile = vram[t:t + 32]
@@ -115,7 +117,10 @@ def main():
     summary = {
         "rom_sha256": hashlib.sha256(rom).hexdigest(),
         "scope": "header_byte==0x10 strict AND dlen>=%d" % SCOPE_DLEN,
-        "vram_bin": os.path.relpath(VRAM, ROOT).replace(os.sep, "/"),
+        "vram_source": "extract/frame900.json",
+        "frame": d["frame"],
+        "vram_sha256": vram_sha,
+        "dump_self_sha256": d.get("self_sha256", ""),
         "vram_tile_slots": len(vram) // 32,
         "vram_unique_tiles": len(slots),
         "candidate_blocks": len(cands),
