@@ -6,6 +6,19 @@
 //
 // 它能抓住的错误：LZ77 标志位写反、Huffman 位序写错、自重复回引处理错——
 // 任何一处语义变化都会让这块的图块哈希全部对不上。
+//
+// 禁令（不要为了"方便"破例）：夹具只能由 VRAM 生成，**绝不可以拿解码器的输出
+// 反过来当期望值**。左侧 VRAM 是原代码在模拟器里跑出来的 ground truth，独立于
+// 我方实现；一旦夹具改由解码器产出，这条用例就退化成"我同意我自己"，对写反
+// 语义的解码器同样通过（`bios-decompress.test.mjs` 早期正是这样假绿的）。
+// 生成命令只有一条：
+//   node scripts/vram-oracle.mjs --frames 900 --fixture test/fixtures/vram-title-tiles.json
+//
+// 地址一律由脚本打印后复制：这里这个常量是从
+//   `node scripts/vram-oracle.mjs` 输出的十进制 offset 经
+//   `('0x' + n.toString(16))` 打印得到，不要手算——我把 11,923,420 心算成
+//   0x00B5F69C（正确是 0x00B5EFDC），第一次跑用例直接拿到 `null`，
+//   而 `null` 会被当成"这块没数据"，是个静默的假结论。
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -52,11 +65,16 @@ test('LZ77 整块命中：0x00B5EFDC 解出的图块全部出现在标题画面 
     if (!uniform(tile)) tiles.push(tile);
   }
 
+  const hashes = tiles.map(hash32);
   assert.equal(tiles.length, 255, `图块数应当是 255（实际 ${tiles.length}）`);
-  const missing = tiles.filter((tile) => !inVram.has(hash32(tile)));
+  // 只验成员资格不够：一个"把同一图块回引 255 次"的错误实现也能过
+  // （dlen 对、成员资格对、内容全错）。必须同时要求**去重后仍是 255**。
+  assert.equal(new Set(hashes).size, 255, `图块内容必须两两不同（去重后 ${new Set(hashes).size} 个）`);
+
+  const missing = hashes.filter((h) => !inVram.has(h));
   assert.equal(
     missing.length,
     0,
-    `有 ${missing.length}/255 个图块在标题画面 VRAM 里找不到；第一个缺失块首字节 ${missing[0]?.[0]}`,
+    `有 ${missing.length}/255 个图块在标题画面 VRAM 里找不到；第一个缺失哈希 ${missing[0]}`,
   );
 });
