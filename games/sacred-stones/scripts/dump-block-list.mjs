@@ -89,6 +89,9 @@ lines.push(`# 4. 附加闸门：块长度 >= ${BLOCK_MIN_SIZE}、<= ${BLOCK_MAX_
 lines.push(`#    压缩比上限 lz77<=${FORMAT_MAX_RATIO[0x10]} huffman<=${FORMAT_MAX_RATIO[0x20]} rle<=${FORMAT_MAX_RATIO[0x30]}；`);
 lines.push('# 以上 4 条是我们与逆向那 35 块差异的全部可能来源，逐块可指名。');
 lines.push('#');
+lines.push('# 范围声明：本清单只包含通过校验的 LZ77 块。Huffman 树尚未校准、RLE 无通过块，');
+lines.push('# 因此这不是「全部压缩块」清单，不得被当作资产总数的依据。');
+lines.push('#');
 lines.push(`# 指针总数=${pointers.length}`);
 lines.push(`# 排除：疑似块头不成立=${excluded.implausible} 未知格式=${excluded.noFormat} 解码失败=${excluded.decodeFailed} 压缩比越界=${excluded.ratioFailed}`);
 const byFormat = rows.reduce((acc, r) => {
