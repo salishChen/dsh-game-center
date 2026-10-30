@@ -1,0 +1,168 @@
+{
+  "rom_sha256": "167ed57921c24f841108f46eabc33cb10e10f141b09d0fa6e75b5c5add3e4df0",
+  "vram_bin": ".botharness/blocks-preview/vram-tiles.bin",
+  "vram_tile_slots": 3072,
+  "vram_unique_tiles": 1611,
+  "candidate_blocks": 4454,
+  "decoded_blocks": 4454,
+  "decode_failures": 0,
+  "tile_sha_unique": 238373,
+  "joined_tiles": 1477,
+  "vram_tiles_unmatched": 134,
+  "unmatched_sample": [
+    "0447e2cda2ca70c47d1edfd62038b958bdafd52b20a9857a7d9b7d1b3d829c51",
+    "0648e462e146fa7ab4e0ec08724ecb69139b35fd2bd6145c78938973c41427f9",
+    "07ea5ed2b52d59acb90d17c324e4c9f0fee41c4263f6a64bb4ba6574f787a50f",
+    "08a01734eefb8dd99adbdb3b674791a59ce28d0d102afed4c15b0cf661453b08",
+    "0a903f832c43efbcf2350d93f51653ab37f7c156321b8c5c0da3a20e0480df2b",
+    "0caa768f20fec68ede30a4c37388639a765934c02843369b8797fe64fcfc1c25",
+    "0ec7411a0000acdb3f129d46016981dc6f2039e4b4d438934f479c59a5d39b24",
+    "13c99612b1913a123b64b3e7553ec0007761af906c68fea4a8129388dad6fae0",
+    "17367dde94c2f31ecd4e1c7981ec8bb9804ceb577085bc17e640ff5f1d718e85",
+    "19531be7dccaa0f94dbdb268253a933704039d70fe8fc39463c0943ef8200267"
+  ],
+  "joined_blocks": 342,
+  "caveat": "帧 900 标题画面单帧；未命中不等于不存在（可能在别的帧加载、运行时拼装或被补丁改过）。uses=VRAM 内相同内容槽位数（下界）。",
+  "top_blocks": [
+    {
+      "offset": "0xB5EFDC",
+      "dlen": 8192,
+      "refs": 1,
+      "tiles": 255,
+      "matched": 255
+    },
+    {
+      "offset": "0xB60D3C",
+      "dlen": 8192,
+      "refs": 1,
+      "tiles": 254,
+      "matched": 254
+    },
+    {
+      "offset": "0xB51798",
+      "dlen": 8192,
+      "refs": 1,
+      "tiles": 248,
+      "matched": 248
+    },
+    {
+      "offset": "0xB8C45C",
+      "dlen": 6080,
+      "refs": 1,
+      "tiles": 142,
+      "matched": 142
+    },
+    {
+      "offset": "0xB5D590",
+      "dlen": 8192,
+      "refs": 1,
+      "tiles": 136,
+      "matched": 136
+    },
+    {
+      "offset": "0xB48D58",
+      "dlen": 4352,
+      "refs": 1,
+      "tiles": 131,
+      "matched": 131
+    },
+    {
+      "offset": "0xB5C67C",
+      "dlen": 8192,
+      "refs": 1,
+      "tiles": 119,
+      "matched": 119
+    },
+    {
+      "offset": "0xB5B7B4",
+      "dlen": 8192,
+      "refs": 1,
+      "tiles": 114,
+      "matched": 114
+    },
+    {
+      "offset": "0xB8B500",
+      "dlen": 1984,
+      "refs": 1,
+      "tiles": 62,
+      "matched": 62
+    },
+    {
+      "offset": "0x1C1858",
+      "dlen": 7680,
+      "refs": 1,
+      "tiles": 127,
+      "matched": 22
+    },
+    {
+      "offset": "0x1C0ED8",
+      "dlen": 7680,
+      "refs": 1,
+      "tiles": 121,
+      "matched": 20
+    },
+    {
+      "offset": "0x1DCDD0",
+      "dlen": 7680,
+      "refs": 1,
+      "tiles": 141,
+      "matched": 20
+    },
+    {
+      "offset": "0xB5D3F4",
+      "dlen": 1280,
+      "refs": 1,
+      "tiles": 18,
+      "matched": 18
+    },
+    {
+      "offset": "0x1D6904",
+      "dlen": 7680,
+      "refs": 1,
+      "tiles": 89,
+      "matched": 17
+    },
+    {
+      "offset": "0x1C8178",
+      "dlen": 7680,
+      "refs": 1,
+      "tiles": 108,
+      "matched": 16
+    },
+    {
+      "offset": "0x1BFC70",
+      "dlen": 7680,
+      "refs": 1,
+      "tiles": 111,
+      "matched": 15
+    },
+    {
+      "offset": "0x1D1254",
+      "dlen": 7680,
+      "refs": 3,
+      "tiles": 93,
+      "matched": 15
+    },
+    {
+      "offset": "0x659804",
+      "dlen": 4096,
+      "refs": 2,
+      "tiles": 119,
+      "matched": 14
+    },
+    {
+      "offset": "0x1C77E0",
+      "dlen": 7680,
+      "refs": 1,
+      "tiles": 115,
+      "matched": 13
+    },
+    {
+      "offset": "0x1D7148",
+      "dlen": 7680,
+      "refs": 1,
+      "tiles": 101,
+      "matched": 13
+    }
+  ]
+}

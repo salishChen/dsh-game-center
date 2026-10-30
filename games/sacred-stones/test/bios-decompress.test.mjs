@@ -199,11 +199,11 @@ test('scanPointedBlocks 除了计数还给逐块清单（导出清单必须靠�
   assert.equal(lz.filter((b) => b.offset === 0x10).length, 1);
 });
 
-test('压缩比闸门 --self-test：dlen/clen > 8 的块必须被剔除（闸门有能力排除，不是恒真）', async () => {
+test('压缩比默认是诊断字段（保留），显式传 maxRatio 时才剔除', async () => {
   const {scanPointedBlocks, FORMAT_LZ77} = await import('../src/extract/bios-decompress.js');
   // 造一块高压缩比的合法块：1 个字面量 + 200 个「回引 len=18 / disp=1」。
   // dlen = 1 + 200*18 = 3601，clen = 4(头) + 26(标志) + 1(字面量) + 400(回引) = 431
-  // ⇒ 比值约 8.35，超过 8，必须被压缩比闸门剔除。
+  // ⇒ 比值约 8.35，超过 8。
   const RUNS = 200;
   const items = [{kind: 'literal', byte: 0x41}];
   for (let i = 0; i < RUNS; i += 1) items.push({kind: 'run', len: 18, disp: 1});
@@ -230,9 +230,11 @@ test('压缩比闸门 --self-test：dlen/clen > 8 的块必须被剔除（闸门
     }
   }
 
-  const rom = new Uint8Array(0x400);
-  // 4 字节对齐的指针字，指向 0x08000010
-  rom[0] = 0x10; rom[3] = 0x08;
+  // ROM 要装得下 dlen（3601 字节）：`dlen > ROM 大小` 是物理不可能的守卫，
+  // 用太小的合成 ROM 会让那道守卫先把它挡掉，于是测到的不是压缩比。
+  const rom = new Uint8Array(0x2000);
+  rom[0] = 0x10;
+  rom[3] = 0x08; // 指针字 0x08000010 → offset 0x10
   const offset = 0x10;
   rom[offset] = 0x10;
   rom[offset + 1] = dlen & 0xff;
@@ -240,13 +242,21 @@ test('压缩比闸门 --self-test：dlen/clen > 8 的块必须被剔除（闸门
   rom[offset + 3] = (dlen >> 16) & 0xff;
   rom.set(body, offset + 4);
 
-  const noGate = scanPointedBlocks(rom, {maxRatio: {[FORMAT_LZ77]: Number.POSITIVE_INFINITY}})
-    .blocks.filter((b) => b.format === FORMAT_LZ77 && b.offset === offset);
-  const withGate = scanPointedBlocks(rom).blocks
-    .filter((b) => b.format === FORMAT_LZ77 && b.offset === offset);
+  const at = (blocks) => blocks.filter((b) => b.format === FORMAT_LZ77 && b.offset === offset);
 
-  assert.equal(noGate.length, 1, '关掉压缩比闸门时这块必须能解出来（否则测的不是闸门）');
-  assert.ok(noGate[0].dlen / noGate[0].clen > 8, `这块的压缩比必须真的超过 8，实际 ${noGate[0].dlen / noGate[0].clen}`);
-  assert.equal(noGate[0].dlen, dlen, 'dlen 必须精确达到头部声明');
-  assert.equal(withGate.length, 0, '开着压缩比闸门时必须被剔除——否则这道闸门是恒真的');
+  // ① 显式开回闸门 ⇒ 必须剔除（证明机制本身是好的，将来想恢复还能用）
+  assert.equal(
+    at(scanPointedBlocks(rom, {maxRatio: {[FORMAT_LZ77]: 8}}).blocks).length,
+    0,
+    '显式传 maxRatio=8 时必须剔除 ratio > 8 的块',
+  );
+  // ② 默认（不传 maxRatio）⇒ 必须保留。这才是"退役判据"的回归：
+  //    如果哪天有人把默认值改回"闸门开着"，这条立刻红，而不会静默砍掉真块。
+  const keptByDefault = at(scanPointedBlocks(rom).blocks);
+  assert.equal(keptByDefault.length, 1, '不传 maxRatio 时 ratio 只是诊断字段，不得剔除');
+  assert.equal(keptByDefault[0].dlen, dlen, 'dlen 必须精确达到头部声明');
+  assert.ok(
+    keptByDefault[0].dlen / keptByDefault[0].clen > 8,
+    `这块的压缩比必须真的超过 8，实际 ${keptByDefault[0].dlen / keptByDefault[0].clen}`,
+  );
 });
