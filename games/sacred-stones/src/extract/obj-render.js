@@ -22,8 +22,8 @@ const OBJ_PALETTE_OFFSET = 0x200;
 // 数据看起来"像"图块、颜色"像"对的，只有形状散架，极难自查。
 const OBJ_TILE_BASE = 0x10000;
 
-const OBJ_MAX_SPRITES_PER_LINE = 64;
-const OBJ_MAX_PIXELS_PER_LINE = 1024;
+export const OBJ_MAX_SPRITES_PER_LINE = 64;
+export const OBJ_MAX_PIXELS_PER_LINE = 1024;
 
 const SCREEN_W = 240;
 const SCREEN_H = 160;
@@ -190,8 +190,11 @@ export function renderObjLayer({
   width = SCREEN_W,
   height = SCREEN_H,
   backdrop,
-  maxSpritesPerLine = OBJ_MAX_SPRITES_PER_LINE,
-  maxPixelsPerLine = OBJ_MAX_PIXELS_PER_LINE,
+  // 默认 **null = 不启用上限**。这两条硬件上限目前**尚未被证伪**，
+  // 所以默认关闭；任何把它改成非 null 的改动都必须同时改测试里的默认值断言，
+  // 让"打开它"变成一个需要解释的动作，而不是某次修复里的顺手。
+  maxSpritesPerLine = null,
+  maxPixelsPerLine = null,
 }) {
   const oneDimensional = Boolean((dispcnt >> 6) & 1);
   const out = new Uint8Array(width * height * 4);
@@ -218,10 +221,10 @@ export function renderObjLayer({
   for (let y = 0; y < height; y += 1) {
     if (y >= SCREEN_H) break;
     const candidates = objs.filter(({obj}) => y >= objTop(obj) && y < objTop(obj) + obj.height);
-    const chosen = candidates.slice(0, maxSpritesPerLine);
+    const chosen = maxSpritesPerLine == null ? candidates : candidates.slice(0, maxSpritesPerLine);
     overLimit += candidates.length - chosen.length;
 
-    let budget = maxPixelsPerLine;
+    let budget = maxPixelsPerLine == null ? Infinity : maxPixelsPerLine;
     for (const {obj} of chosen) {
       if (budget <= 0) {
         overPixels += 1;
