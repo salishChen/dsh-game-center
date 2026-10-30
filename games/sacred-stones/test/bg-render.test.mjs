@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {renderTextBg, flattenOnBackdrop, parseBgcnt, mapDimensions, backdropColor} from '../src/extract/bg-render.js';
+import {renderTextBg, renderBgStackBlended, flattenOnBackdrop, parseBgcnt, mapDimensions, backdropColor} from '../src/extract/bg-render.js';
 
 // 这些用例的期望值全部手算，不拿实现输出当期望值——否则只是"我同意我自己"。
 const SCREEN_BASE = 0x800; // BGxCNT screenBase 字段第 1 档 = 0x800
@@ -169,4 +169,65 @@ test('8bpp 模式：没有 bank 概念，索引直接是多色调色板的编号
   const bgcnt = (1 << 8) | (1 << 7); // screenBase 0x800, 8bpp
   const out = renderTextBg({vram, palette, bgcnt, hofs: 0, vofs: 0});
   assert.deepEqual([...out.rgba.subarray(0, 3)], [y4(31), y4(0), y4(0)]);
+});
+
+// ── 颜色特效：只有第一目标时，硬件什么都不做 ──────────────────────────────
+// 这条语义（没有第二目标 ⇒ 不混合）曾让我算出"整体暗一半"、6,241 个像素全红，
+// 且错误看起来完全像混合公式写错了。注释不会失败，所以钉成用例。
+
+test('BLDCNT 只有第一目标、没有第二目标时：合成结果与不开特效逐像素相同', () => {
+  const vram = makeVram();
+  const palette = makePalette();
+  fillTile4bpp(vram, 1, 0x11);
+  setEntry(vram, 0, 0, 0x1001);
+  // screenBase 第 1 档（0x800）才对上 setEntry 写入的位置；bgcnt=0 会让地图读在 0 处，
+  // 于是"两层都是全黑"——这正是"退化的相等"，测试自己也会被它骗过去。
+  const layers = [{bgIndex: 0, bgcnt: 1 << 8, hofs: 0, vofs: 0}];
+
+  const plain = renderBgStackBlended({vram, palette, layers, bldcnt: 0x00, blendDomain: '5bit'});
+  // 先自证这张图不是全黑，否则后面的相等断言毫无意义
+  assert.notEqual(plain.rgba[0], 0);
+  // 第一目标 BG0 + 特效 3（变暗）+ BLDY=16，但没有第二目标
+  const onlyFirst = renderBgStackBlended({
+    vram,
+    palette,
+    layers,
+    bldcnt: (1 << 0) | (3 << 6),
+    bldy: 16,
+    blendDomain: '5bit',
+  });
+  assert.deepEqual([...onlyFirst.rgba], [...plain.rgba]);
+
+  // 把第二目标 BD（bit13）打开，同一份数据必须真的变黑
+  const withSecond = renderBgStackBlended({
+    vram,
+    palette,
+    layers,
+    bldcnt: (1 << 0) | (3 << 6) | (1 << 13),
+    bldy: 16,
+    blendDomain: '5bit',
+  });
+  assert.notDeepEqual([...withSecond.rgba], [...plain.rgba]);
+});
+
+test('ALPHA：EVA=0/EVB=16 且第二目标是 BD 时，整层退化成背景色', () => {
+  const vram = makeVram();
+  const palette = makePalette();
+  palette[0] = 0x1f; // 背景色 = 红
+  palette[1] = 0x00;
+  fillTile4bpp(vram, 1, 0x11);
+  setEntry(vram, 0, 0, 0x1001);
+  const layers = [{bgIndex: 0, bgcnt: 1 << 8, hofs: 0, vofs: 0}];
+  const out = renderBgStackBlended({
+    vram,
+    palette,
+    layers,
+    bldcnt: (1 << 0) | (1 << 13) | (1 << 6),
+    bldalpha: 0x0000 | (16 << 8),
+    blendDomain: '5bit',
+  });
+  // 每个不透明像素都应变成背景色（红）
+  assert.equal(out.rgba[0], y4(31));
+  assert.equal(out.rgba[1], 0);
+  assert.equal(out.rgba[2], 0);
 });

@@ -25,7 +25,7 @@
 //   0 = 至少一层逐像素相符
 //   1 = 有层不符（真问题）
 //   2 = 用法/输入错误（找不到卡带等）
-//   3 = 无判据（所有候选层都是空的）——**不是通过**，别当 0 处理
+//   3 = 无判据（层是空的，或第二轮特效没触发过）——**不是通过**，别当 0 处理
 
 import {createHash} from 'node:crypto';
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
@@ -194,6 +194,46 @@ for (const index of candidates) {
     : flattenOnBackdrop(renderTextBg({vram, palette, bgcnt, hofs, vofs}), palette);
   // 模拟器把 5 位色按 v<<3 展开，我按 (v<<3)|(v>>2) 展开，同一颜色最多差 7。
   // 与其把容差放大（会连真实错误一起掩盖），不如两边都回到 5 位域比。
+  // ── 触发证据（witness）─────────────────────────────────────────────
+  // 相符必须建立在"被测分支真的执行过"上：样本非空、取值非单一、分支被触发。
+  // 前两条由颜色数保证，第三条只能自己算：把特效关掉再合成一次，看有多少像素变了。
+  const witness = (() => {
+    if (round !== 2) return {effectApplied: null, blendedPixels: null};
+    const withoutEffect = flattenOnBackdrop(
+      renderTextBg({vram, palette, bgcnt, hofs, vofs}),
+      palette,
+    );
+    let blendedPixels = 0;
+    for (let i = 0; i < mine.rgba.length; i += 4) {
+      if (
+        mine.rgba[i] !== withoutEffect.rgba[i]
+        || mine.rgba[i + 1] !== withoutEffect.rgba[i + 1]
+        || mine.rgba[i + 2] !== withoutEffect.rgba[i + 2]
+      ) blendedPixels += 1;
+    }
+    return {
+      effectApplied: blendedPixels > 0,
+      blendedPixels,
+      firstTargetIncludesLayer: Boolean((isolateBldcnt >> index) & 1),
+      secondTarget: (isolateBldcnt >> 13) & 1 ? 'backdrop' : 'none',
+      mode: (isolateBldcnt >> 6) & 0x3,
+      blendDomain,
+    };
+  })();
+
+  if (round === 2 && witness.blendedPixels === 0) {
+    results.push({
+      bg: index,
+      status: 'skip-nofire',
+      reason:
+        '这一轮特效没有真正作用在任何像素上（关掉特效后合成结果相同），'
+        + '「相符」只证明了没触发时我没乱改像素；请加 --target self 或换 --effect',
+      witness,
+      registers: {bgcnt: hex(bgcnt), hofs, vofs, bldcntIsolated: hex(isolateBldcnt)},
+    });
+    continue;
+  }
+
   const diff = compareFrames(mine, oracle, {tolerance: 0, quantizeBits: 3});
   const mineColors = distinctColors(mine.rgba);
 
@@ -217,6 +257,7 @@ for (const index of candidates) {
       bldy: read16(0x54) & 0x1f,
     },
     colors: {oracle: oracleColors, mine: mineColors},
+    witness,
     diff: {
       diffPixels: diff.diffPixels,
       total: diff.total,
@@ -235,7 +276,9 @@ const summary = {
     ? 'mismatch'
     : results.some((r) => r.status === 'match')
       ? 'match'
-      : 'skip-blank',
+      : results.some((r) => r.status === 'skip-nofire')
+        ? 'skip-nofire'
+        : 'skip-blank',
   round2Targeting: round === 2 ? targetMode : undefined,
   round2Effect: round === 2 ? effectArg : undefined,
   blendDomain: round === 2 ? blendDomain : undefined,

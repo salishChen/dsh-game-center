@@ -233,8 +233,15 @@ export const ROM_POINTER_BASE = 0x08000000;
  * 实测反例：不做这个约束时，47,233 个指针里有 51 处"通过校验"的 RLE，
  * 合计解出 254,495,444 B（输入才 16,983,566 B），全部是随机字节凑出来的假块。
  */
+// 压缩比上限（dlen / clen），超过就判假阳性。
+//
+// LZ77 原来写 8，实测太紧：与逆向的逐流清单做集合差后，有 25 块落在 8.05~8.40
+// （都是"整块同色图块"那类高重复数据，dlen 与头部声明完全一致、能精确解出）。
+// 上限的意义是挡"随机字节冒充块头"（那种会声明十几 MB），不是挡"压得太好"，
+// 所以放到 16 仍然能挡住假阳性，却不再误杀真块。
+// **这条数字是量出来的，不是拍的**：改之前先跑 scripts/attribute-only-blocks.mjs。
 export const FORMAT_MAX_RATIO = {
-  [FORMAT_LZ77]: 8,
+  [FORMAT_LZ77]: 16,
   [FORMAT_HUFFMAN]: 4,
   [FORMAT_RLE]: 2,
 };
@@ -266,7 +273,13 @@ export const BLOCK_MIN_SIZE = 32;
 export const BLOCK_MAX_SIZE = 0x100000;
 
 export function isPlausibleBlockOffset(bytes, offset) {
-  if (offset % 4 !== 0) return false;
+  // 这里**不再**要求 offset 自身 4 字节对齐。
+  //
+  // 曾经要求过，理由是"ARM 数据都对齐"。实测推翻：偏移 0xA1317E（%4 == 2）被
+  // 0x07B1C8 处一个字 `0x08A1317E` 明确引用，头字节 0x14 → LZ77、dlen=256，
+  // 能精确解出 256 字节。GBA BIOS 的 LZ77 解压对**目标偏移**没有对齐要求，
+  // 对齐要求只属于"指针字本身在 4 字节边界"（扫描 p += 4 已天然满足）。
+  // 把这两件事混成一条闸门，就会漏掉真块——而漏掉时症状是"清单里少一块"，静默。
   const format = formatOf(bytes, offset);
   if (format === null) return false;
   const size = declaredSize(bytes, offset);
@@ -281,17 +294,42 @@ export function scanPointedBlocks(bytes, options = {}) {
     [FORMAT_RLE]: {files: 0, decoded: 0, compressedBytes: 0, decompressedBytes: 0},
   };
   const pointers = collectRomPointers(bytes);
+  // blocks：逐个通过闸门的块。导出清单必须用它，否则别人只拿到计数、
+  // 没法做集合差——而"只报一个数"正是上一轮数字被当成事实传下去的原因。
+  const blocks = [];
+  const rejected = {unalignedOrImplausible: 0, undecodable: 0, ratioTooHigh: 0};
+  const seen = new Set();
   for (const offset of pointers) {
-    if (!isPlausibleBlockOffset(bytes, offset)) continue;
+    if (!isPlausibleBlockOffset(bytes, offset)) {
+      rejected.unalignedOrImplausible += 1;
+      continue;
+    }
     const format = formatOf(bytes, offset);
     stats[format].files += 1;
     const result = decompress(bytes, offset, options);
-    if (result === null) continue;
-    if (result.consumed <= 0) continue;
-    if (result.output.length / result.consumed > FORMAT_MAX_RATIO[format]) continue;
+    if (result === null) {
+      rejected.undecodable += 1;
+      continue;
+    }
+    if (result.consumed <= 0) {
+      rejected.undecodable += 1;
+      continue;
+    }
+    if (result.output.length / result.consumed > FORMAT_MAX_RATIO[format]) {
+      rejected.ratioTooHigh += 1;
+      continue;
+    }
     stats[format].decoded += 1;
     stats[format].compressedBytes += result.consumed;
     stats[format].decompressedBytes += result.output.length;
+    if (seen.has(offset)) continue;
+    seen.add(offset);
+    blocks.push({
+      offset,
+      format,
+      dlen: result.output.length,
+      clen: result.consumed,
+    });
   }
-  return {pointers: pointers.length, stats};
+  return {pointers: pointers.length, stats, blocks, rejected};
 }

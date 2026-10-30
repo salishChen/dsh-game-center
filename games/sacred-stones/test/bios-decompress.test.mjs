@@ -175,3 +175,26 @@ test('真卡带：压缩块能通过严格校验，且块数与"数千级"一致
   }
   assert.ok(checked >= 100, `应能抽查到上百个块，实际 ${checked}`);
 });
+
+test('scanPointedBlocks 除了计数还给逐块清单（导出清单必须靠它，不能只给数）', async () => {
+  const {scanPointedBlocks, FORMAT_LZ77} = await import('../src/extract/bios-decompress.js');
+  // 合法块要过 `size >= 32` 的闸门，所以 dlen 必须 ≥ 32：4 组「1 标志字节 + 8 字面量」
+  const block = [0x10, 32, 0, 0];
+  for (let group = 0; group < 4; group += 1) {
+    block.push(0x00); // 8 位全 0 = 8 个字面量
+    for (let i = 0; i < 8; i += 1) block.push(0x41 + group);
+  }
+  const rom = new Uint8Array(0x100);
+  // 指针字放在开头（4 字节对齐），指向 0x08000010
+  rom[0] = 0x10; rom[1] = 0x00; rom[2] = 0x00; rom[3] = 0x08;
+  rom.set(block, 0x10);
+  const scan = scanPointedBlocks(rom);
+  const lz = scan.blocks.filter((b) => b.format === FORMAT_LZ77);
+  // 指针<>只找到 0x10 一处；但 0x10 处之后还有 4 字节对齐的候选，所以只断言"含 0x10 这一块"
+  const target = lz.find((b) => b.offset === 0x10);
+  assert.ok(target, '清单里必须有 0x10 这一块');
+  assert.equal(target.dlen, 32);
+  assert.equal(target.clen, block.length);
+  // 同一 offset 不能出现两次
+  assert.equal(lz.filter((b) => b.offset === 0x10).length, 1);
+});
