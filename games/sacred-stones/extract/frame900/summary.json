@@ -42,6 +42,10 @@
         15
       ],
       "distinct_palette_banks": 1,
+      "colors_per_bank": {
+        "15": 1
+      },
+      "max_colors_per_bank": 1,
       "top_colors": [
         {
           "color": "0000",
@@ -162,6 +166,20 @@
         10
       ],
       "distinct_palette_banks": 11,
+      "colors_per_bank": {
+        "0": 7,
+        "1": 8,
+        "2": 5,
+        "3": 6,
+        "4": 4,
+        "5": 9,
+        "6": 3,
+        "7": 11,
+        "8": 9,
+        "9": 11,
+        "10": 10
+      },
+      "max_colors_per_bank": 11,
       "top_colors": [
         {
           "color": "19F5",
@@ -286,6 +304,10 @@
         14
       ],
       "distinct_palette_banks": 1,
+      "colors_per_bank": {
+        "14": 15
+      },
+      "max_colors_per_bank": 15,
       "top_colors": [
         {
           "color": "0A17",
@@ -399,7 +421,10 @@
   "ab_test": {
     "description": "composite with first-target layer vs without it; half check in 15-bit domain: out_with == out_without >> 1 per 5-bit channel",
     "diff_pixels": 13515,
-    "exact_half": 13515
+    "exact_half": 13515,
+    "layer1_opaque": 14564,
+    "blended_pixels": 13515,
+    "no_under_pixels": 1049
   },
   "bg1_index_histogram": null,
   "composite_rgb_sha256": "c6b3aacc77f36adbc08d52641a4c3b85e328761582ccd3c503d5785f506fd4db",
