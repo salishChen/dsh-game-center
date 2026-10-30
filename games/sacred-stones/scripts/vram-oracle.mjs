@@ -96,6 +96,10 @@ for (const row of rows) {
 hits.sort((a, b) => b.matched - a.matched);
 const summary = {
   frames,
+  scope: {
+    lowerBoundOnly: true,
+    note: '本结果只覆盖这一帧加载进 VRAM 的图形块；未命中不等于不存在（可能这一帧没加载、可能运行时拼装、可能被补丁改过）。要分母必须多状态取并集。',
+  },
   vramTilesInVram: vramTiles.size,
   blocksWithHits: hits.length,
   tilesMatchedTotal: hits.reduce((s, h) => s + h.matched, 0),
@@ -106,4 +110,24 @@ mkdirSync(outDir, {recursive: true});
 writeFileSync(join(outDir, 'vram-match.json'), `${JSON.stringify(summary, null, 2)}\n`);
 writeFileSync(join(outDir, 'vram-tiles.bin'), Buffer.from(vramBytes));
 writeFileSync(join(outDir, 'vram-palette.bin'), Buffer.from(paletteBytes));
+
+// --emit-fixture：把「这一帧 VRAM 里出现过的图块哈希」固化成回归夹具。
+// 夹具只含哈希、不含像素数据，进仓库无版权问题；测试用它比对解码器输出，
+// 谁改了 LZ77/Huffman 语义都会立刻红（不需要每次跑模拟器）。
+const fixturePath = argOf('fixture', null);
+if (fixturePath) {
+  const tiles = [...vramTiles.keys()].sort();
+  const fixture = {
+    note: `帧 ${frames} 标题画面 VRAM 中非纯色图块的 sha1 前 16 位；由 scripts/vram-oracle.mjs --emit-fixture 生成。未命中不等于不存在。`,
+    frames,
+    romSha256: readFileSync(join(here, '..', 'src', 'rom-identity.js'), 'utf8').includes('167ed57921c24f84')
+      ? '167ed57921c24f841108f46eabc33cb10e10f141b09d0fa6e75b5c5add3e4df0'
+      : 'unknown',
+    tileCount: tiles.length,
+    tiles,
+  };
+  writeFileSync(resolve(fixturePath), `${JSON.stringify(fixture, null, 2)}\n`);
+  console.log(`fixture → ${resolve(fixturePath)}（${tiles.length} 个图块哈希）`);
+}
+
 console.log(JSON.stringify(summary, null, 2));
