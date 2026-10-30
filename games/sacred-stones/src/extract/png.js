@@ -128,6 +128,7 @@ function chunk(type, data) {
 }
 
 export function encodePng({width, height, rgba}) {
+  const pixels = Buffer.isBuffer(rgba) ? rgba : Buffer.from(rgba.buffer ?? rgba, rgba.byteOffset ?? 0, rgba.byteLength ?? rgba.length);
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
@@ -141,7 +142,7 @@ export function encodePng({width, height, rgba}) {
   const raw = Buffer.alloc((stride + 1) * height);
   for (let y = 0; y < height; y += 1) {
     raw[y * (stride + 1)] = 0; // 不做行滤波，写起来简单、读回来也无损
-    rgba.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride);
+    pixels.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride);
   }
   return Buffer.concat([
     PNG_SIG,

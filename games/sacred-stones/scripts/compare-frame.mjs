@@ -63,10 +63,14 @@ export function toNative({width, height, rgba}, nativeWidth = 240, nativeHeight 
   return {width: nativeWidth, height: nativeHeight, rgba: out, scale: sx};
 }
 
-export function compareFrames(actual, expected, {tolerance = 1, region} = {}) {
+export function compareFrames(actual, expected, {tolerance = 1, region, quantizeBits = 0} = {}) {
   if (actual.width !== expected.width || actual.height !== expected.height) {
     throw new Error(`尺寸不一致：${actual.width}x${actual.height} vs ${expected.width}x${expected.height}`);
   }
+  // 跨实现比较颜色时，5 位→8 位的展开规则不同会把每个像素都改一点：
+  // (v<<3)|(v>>2) 与 v<<3 在 v=31 时相差 7。与其把容差放大到 7（那会连真实
+  // 错误一起掩盖），不如两边都回到 5 位域比较——量化后同一颜色的差异是 0。
+  const mask = quantizeBits > 0 ? (0xff << quantizeBits) & 0xff : 0xff;
   const area = region ?? {x: 0, y: 0, width: actual.width, height: actual.height};
   if (
     area.x < 0 || area.y < 0 ||
@@ -84,7 +88,7 @@ export function compareFrames(actual, expected, {tolerance = 1, region} = {}) {
       const i = (y * actual.width + x) * 4;
       let pixelDelta = 0;
       for (let c = 0; c < 4; c += 1) {
-        const d = Math.abs(actual.rgba[i + c] - expected.rgba[i + c]);
+        const d = Math.abs((actual.rgba[i + c] & mask) - (expected.rgba[i + c] & mask));
         if (d > pixelDelta) pixelDelta = d;
       }
       if (pixelDelta > maxChannelDelta) maxChannelDelta = pixelDelta;
