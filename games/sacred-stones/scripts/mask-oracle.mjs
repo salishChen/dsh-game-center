@@ -17,6 +17,7 @@ import {createHash} from 'node:crypto';
 import {bootKernel} from '../src/app/boot.js';
 import {parseBgcnt, renderTextBg} from '../src/extract/bg-render.js';
 import {encodePng} from '../src/extract/png.js';
+import {packMaskSha256, maskConventionOf} from '../src/extract/mask-pack.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
@@ -121,16 +122,12 @@ for (let i = 0; i < W * H; i += 1) {
 
 // 按行打包的 1 bit 掩码摘要 = **像素集合相等**的判据。
 // 比 PNG 文件 sha 强（不混编码器差异），也比计数强（计数相同仍可能位置不同）。
-const setSha = (pixels) => {
-  const bitsPerRow = Math.ceil(W / 8);
-  const packed = new Uint8Array(bitsPerRow * H);
-  for (let y = 0; y < H; y += 1) {
-    for (let x = 0; x < W; x += 1) {
-      if (pixels[y * W + x]) packed[y * bitsPerRow + (x >> 3)] |= 1 << (x & 7);
-    }
-  }
-  return {sha256: sha(packed), bytes: packed.length};
-};
+// 打包一律走 src/extract/mask-pack.js —— 那里有已知答案向量（用 Python 独立算出期望值），
+// 不再在脚本里各写一份。上一版就是各写一份、还写成 LSB-first，导致同一个集合四个 sha。
+const setSha = (pixels) => ({
+  sha256: packMaskSha256(pixels, {width: W, height: H}),
+  bytes: Math.ceil(W / 8) * H,
+});
 
 const grayPng = (pixels) => {
   const rgba = new Uint8Array(W * H * 4);
@@ -186,6 +183,8 @@ console.log(JSON.stringify({
     },
     sampling: 'renderScanline(line=0) 挂钩取样；帧末回读不可用作证据（游戏会在 VBlank 写回）',
     set_sha256: setSha(blind).sha256,
+    set_bytes: setSha(blind).bytes,
+    mask_convention: maskConventionOf('bg1-opaque-and-same-result', {width: W, height: H, row_major: true, msb_first: true, pad: 'zero-to-byte'}),
     pixels: blindPixels,
     blendVisibleWhereBg1,
     assumption: '盲区 = 硬件在 BLDCNT=0x0c42 与 BLDCNT=0 两种配置下输出相同的像素 ∩ BG1 不透明；只改 BLDCNT，同一 savestate、同一帧、无容差',
@@ -196,6 +195,8 @@ console.log(JSON.stringify({
   },
   mask: {
     set_sha256: setSha(mask).sha256,
+    set_bytes: setSha(mask).bytes,
+    mask_convention: maskConventionOf('bg1-opaque', {width: W, height: H, row_major: true, msb_first: true, pad: 'zero-to-byte'}),
     png_sha256: sha(maskPng),
     png_bytes: maskPng.length,
     hist16: hist16(mask),

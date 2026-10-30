@@ -173,3 +173,37 @@ sha256 = 590ddde5444fee9ae8d200c7361b5f90927054c7b25a7524ef26acc28fb973c2
 `bit_source` 语义钉死：**4bpp 图块索引 != 0（索引 0 透明）**，不是"白像素"，不是 alpha。
 
 补充：2026-10-30 那次"两侧相同"实际是**同一个打包器算两侧的图**，只证明像素相同，不证明打包器一致；打包器一致性以本节向量为准。
+
+## 掩码打包约定（判据的一部分，配已知答案向量）
+
+`set_sha256` 只有在约定固定时才代表"像素集合相等"。本项目的真实事故：两侧逐像素比较
+确认集合相等（`onlyMine 0 / onlyImpl 0`），但贴出来的 sha 有**四个不同的值**——
+不是数据错，是两边各写了一份打包器，其中一份是 LSB-first。
+
+约定（`src/extract/mask-pack.js` 的唯一实现）：
+
+```
+width 240 / height 160 / row-major / 白=1 / MSB-first / 行末补 0 到整字节 / 30 B 每行
+摘要 = sha256(打包字节)，小写十六进制，不带前缀
+```
+
+**已知答案向量**（期望值由 Python `hashlib` 独立算出，不是跑实现再抄回来）：
+
+| 向量 | 内容 | 打包字节 | sha256 |
+| --- | --- | --- | --- |
+| vec1 | 4×2，行 0 = `1011`、行 1 = `0100` | `b040` | `5ebc514a714b7e738505fabf839804b26e95d56d0ca54cf6b29052ebd8b9fe37` |
+| vec2 | 240×1，仅第 239 像素为 1 | `00…0001`（30 B） | `65279e18ab3349670c5e4029a6c82a51ebb51969cb9ea6c486a5248bd50b3d6a` |
+
+`mask_convention` 必须随每份掩码的 `summary.json` 走，六项齐全：
+`{width, height, row_major, bit_source, msb_first, pad}`（外加 `bytes_per_row`）。
+`bit_source` 要写清"这里的 1 代表什么"（`bg1-opaque` / `bg1-opaque-and-same-result`），
+三者在本帧可能同集、换个帧就分家。
+
+## dump 里两个摘要的复算规则
+
+别人要能**独立复算**，规则必须公开：
+
+- `registers_sha256 = sha256(UTF-8 的 JSON.stringify(registers))`，键序就是 dump 里 `registers` 对象的书写顺序，
+  **不含任何空白字符**（不是 `JSON.stringify(x, null, 2)`）。
+- `self_sha256 = sha256(文件字节，其中 self_sha256 的值替换成 64 个 '0')`。
+  不用"删掉字段再序列化"：那依赖键序与缩进，换语言重算极易对不上，而一个对不上的自校验字段比没有更坏。
