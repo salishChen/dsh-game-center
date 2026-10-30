@@ -41,20 +41,60 @@ const snap = {
 };
 const state = structuredClone(gba.serialize());
 
+// 帧末回读是没用的：游戏在 VBlank 里把 BLDCNT 写回 0x0c42，所以 runFrame() 结束后
+// 读到的一定是游戏的值，两次实验都会读到同一个数 —— 那正是"看起来有对照、其实没有"。
+// 正确的取样点是**渲染期间**：包一层 renderScanline，在第 0 行被渲染的那一刻读寄存器。
+// 只在渲染前写一次是不够的：实测游戏会在同一帧内把 BLDCNT 写回 0x0c42，
+// 于是"改了 0 的那一次"只对前面若干行生效 —— 结果是一个**半帧对照**，
+// 算出来的数自洽但不是我们要的实验。所以改成**每一条扫描线渲染前都强制写入**，
+// 让整帧都处在被指定的配置下；witness 记的是我们写入后、渲染器读到的那个值。
+let forceBldcnt = null;
+let sampledBldcnt = null;
+const originalRenderScanline = gba.ppu.renderScanline.bind(gba.ppu);
+gba.ppu.renderScanline = (line, bus) => {
+  if (forceBldcnt !== null) {
+    bus.mmioRegisters[0x50] = forceBldcnt & 0xff;
+    bus.mmioRegisters[0x51] = (forceBldcnt >> 8) & 0xff;
+  }
+  if (line === 0) {
+    sampledBldcnt = bus.mmioRegisters[0x50] | (bus.mmioRegisters[0x51] << 8);
+  }
+  return originalRenderScanline(line, bus);
+};
+
 function hardwareFrame({bldcntPatch = null} = {}) {
   gba.deserialize(state);
-  const m = gba.bus.mmioRegisters;
-  if (bldcntPatch != null) {
-    m[0x50] = bldcntPatch & 0xff;
-    m[0x51] = (bldcntPatch >> 8) & 0xff;
-  }
+  forceBldcnt = bldcntPatch;
+  sampledBldcnt = null;
   gba.runFrame();
-  return new Uint32Array(gba.ppu.getFramebuffer());
+  forceBldcnt = null;
+  const postFrame = gba.bus.mmioRegisters;
+  return {
+    fb: new Uint32Array(gba.ppu.getFramebuffer()),
+    // 渲染期间实际生效的值（witness 的主证据）
+    bldcntWhileRendering: sampledBldcnt,
+    // 帧末的值（游戏写回的），一起记下来，正好说明"为什么不能用帧末值当证据"
+    bldcntAfterFrame: postFrame[0x50] | (postFrame[0x51] << 8),
+  };
 }
 
 const withBlend = hardwareFrame();
-const noBlend = hardwareFrame({bldcntPatch: 0});
+const noBlend = hardwareFrame({bldcntPatch: 0x0000});
 gba.deserialize(state);
+
+// 夹具自证：如果两次抓帧的 BLDCNT 回读相同，这个实验根本没有对照，直接拒绝出数。
+if (withBlend.bldcntWhileRendering === noBlend.bldcntWhileRendering) {
+  console.error(JSON.stringify({
+    refused: 'bldcnt-toggle-ineffective',
+    bldcntWhileRendering: `0x${Number(withBlend.bldcntWhileRendering).toString(16)}`,
+    bldcntAfterFrame: {
+      withBlend: `0x${Number(withBlend.bldcntAfterFrame).toString(16)}`,
+      noBlend: `0x${Number(noBlend.bldcntAfterFrame).toString(16)}`,
+    },
+    hint: '两次配置抓帧时读回的 BLDCNT 相同：游戏在帧内把值改回去了，或补丁没写进去。盲区必须重算。',
+  }, null, 2));
+  process.exit(3);
+}
 
 // 我的 BG1 掩码
 const bg1 = renderTextBg({
@@ -75,9 +115,22 @@ let blindPixels = 0;
 let blendVisibleWhereBg1 = 0;
 for (let i = 0; i < W * H; i += 1) {
   if (mask[i] === 0) continue;
-  if (withBlend[i] === noBlend[i]) { blind[i] = 255; blindPixels += 1; }
+  if (withBlend.fb[i] === noBlend.fb[i]) { blind[i] = 255; blindPixels += 1; }
   else blendVisibleWhereBg1 += 1;
 }
+
+// 按行打包的 1 bit 掩码摘要 = **像素集合相等**的判据。
+// 比 PNG 文件 sha 强（不混编码器差异），也比计数强（计数相同仍可能位置不同）。
+const setSha = (pixels) => {
+  const bitsPerRow = Math.ceil(W / 8);
+  const packed = new Uint8Array(bitsPerRow * H);
+  for (let y = 0; y < H; y += 1) {
+    for (let x = 0; x < W; x += 1) {
+      if (pixels[y * W + x]) packed[y * bitsPerRow + (x >> 3)] |= 1 << (x & 7);
+    }
+  }
+  return {sha256: sha(packed), bytes: packed.length};
+};
 
 const grayPng = (pixels) => {
   const rgba = new Uint8Array(W * H * 4);
@@ -119,6 +172,20 @@ console.log(JSON.stringify({
   },
   bg1Opaque,
   blindzone: {
+    // 盲区是 (frame, BLDCNT) 这一对的属性，不是这个游戏的属性：换帧或换 BLDCNT 必须重算。
+    frame: FRAMES,
+    bldcnt: `0x${snap.bldcnt.toString(16)}`,
+    // 渲染期间实际生效的 BLDCNT（证据）；帧末值只作为"为什么不能用它当证据"的反面记录
+    bldcntWhileRendering: {
+      withBlend: `0x${Number(withBlend.bldcntWhileRendering).toString(16)}`,
+      noBlend: `0x${Number(noBlend.bldcntWhileRendering).toString(16)}`,
+    },
+    bldcntAfterFrame: {
+      withBlend: `0x${Number(withBlend.bldcntAfterFrame).toString(16)}`,
+      noBlend: `0x${Number(noBlend.bldcntAfterFrame).toString(16)}`,
+    },
+    sampling: 'renderScanline(line=0) 挂钩取样；帧末回读不可用作证据（游戏会在 VBlank 写回）',
+    set_sha256: setSha(blind).sha256,
     pixels: blindPixels,
     blendVisibleWhereBg1,
     assumption: '盲区 = 硬件在 BLDCNT=0x0c42 与 BLDCNT=0 两种配置下输出相同的像素 ∩ BG1 不透明；只改 BLDCNT，同一 savestate、同一帧、无容差',
@@ -128,6 +195,7 @@ console.log(JSON.stringify({
     hist16: hist16(blind),
   },
   mask: {
+    set_sha256: setSha(mask).sha256,
     png_sha256: sha(maskPng),
     png_bytes: maskPng.length,
     hist16: hist16(mask),

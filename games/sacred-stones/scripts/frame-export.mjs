@@ -4,9 +4,18 @@
  * 为什么必须同帧：寄存器与 VRAM 差一帧，滚动量就对不上，合成出来整屏横移一格，
  * 看起来像"图块顺序错了"。所以这里一次性从同一个 `bus` 快照里读全部数据。
  *
- * 输出（PM 指定格式）：
- *   {frame, dispcnt, bgcnt[4], bghofs[4], bgvofs[4], bldcnt, bldalpha, bldy,
- *    vram_base64, vram_sha256, palette_base64, palette_sha256, self_sha256}
+ * 输出 v2（format_version 2，PM 定）：
+ *   {format_version: 2, frame_no, frame,
+ *    registers: {dispcnt, bgcnt[4], bghofs[4], bgvofs[4], bldcnt, bldalpha, bldy},
+ *    registers_sha256,
+ *    dispcnt, bgcnt[4], bghofs[4], bgvofs[4], bldcnt, bldalpha, bldy,   ← v1 兼容的平铺副本
+ *    vram_base64, vram_sha256, palette_base64, palette_sha256,
+ *    oam_base64 (1,024 B), oam_sha256, self_sha256}
+ *
+ * 关于"加字段会不会让下游重算"：不会。下游标注的应当是**输入内容的 sha**
+ * （`vram_sha256` / `palette_sha256` / `registers_sha256`），不是容器文件的 sha。
+ * 加 OAM 一个字节都没动 VRAM、调色板、寄存器，所以资产表与掩码都无需重出。
+ * 反过来，若哪天 `vram_sha256` 变了，那才是必须重算的信号。
  *
  * 用法：node scripts/frame-export.mjs --frames 900 [--out extract/frame900.json]
  */
@@ -56,8 +65,26 @@ const u16 = (at) => mmio[at] | (mmio[at + 1] << 8);
 // vram/palette 必须与寄存器来自同一时刻：这里取的是"第 N 帧渲染所用"的那一份。
 const vram = new Uint8Array(bus.vram);
 const palette = new Uint8Array(bus.palette);
+const oam = new Uint8Array(bus.oam);
+
+// 寄存器的"原始值"集合。`registers_sha256` 定义写死，任何语言可复核：
+//   registers_sha256 = sha256( JSON.stringify(registers) )   ← 键序即下面这个字面量顺序，无空白
+const registers = {
+  dispcnt: u16(0x00),
+  bgcnt: [0, 1, 2, 3].map((n) => u16(0x08 + n * 2)),
+  bghofs: [0, 1, 2, 3].map((n) => u16(0x10 + n * 4) & 0x1ff),
+  bgvofs: [0, 1, 2, 3].map((n) => u16(0x12 + n * 4) & 0x1ff),
+  bldcnt: u16(0x50),
+  bldalpha: u16(0x52),
+  bldy: u16(0x54) & 0xff,
+};
+const registersSha256 = sha256(Buffer.from(JSON.stringify(registers), 'utf8'));
 
 const payload = {
+  format_version: 2,
+  frame_no: frames,
+  registers,
+  registers_sha256: registersSha256,
   frame: frames,
   dispcnt: hex(u16(0x00)),
   bgcnt: [0, 1, 2, 3].map((n) => hex(u16(0x08 + n * 2))),
@@ -70,6 +97,8 @@ const payload = {
   vram_sha256: sha256(vram),
   palette_base64: Buffer.from(palette).toString('base64'),
   palette_sha256: sha256(palette),
+  oam_base64: Buffer.from(oam).toString('base64'),
+  oam_sha256: sha256(oam),
 };
 
 // 自身摘要的定义必须写死、且能被任何语言独立复核：
@@ -100,4 +129,6 @@ payload.bgcnt.forEach((cnt, n) => {
 });
 console.log(`vram ${vram.length} B sha256 ${payload.vram_sha256}`);
 console.log(`palette ${palette.length} B sha256 ${payload.palette_sha256}`);
+console.log(`oam ${oam.length} B sha256 ${payload.oam_sha256}`);
+console.log(`registers sha256 ${payload.registers_sha256}`);
 console.log(`self_sha256 ${payload.self_sha256}`);
