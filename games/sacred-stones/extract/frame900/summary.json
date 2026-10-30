@@ -445,7 +445,7 @@
     "definition": "白=混合输出与不混合输出同值的像素（不可判区，由参照侧独立算出）",
     "assumption": "reference-side: frame900.json (sha256 c1fdc400..., vram 73025eda...) registers = frame 900 (dump taken AFTER last runFrame, per game impl 0169d4f); blind = pixels where composite-with-first-target == composite-without-first-target in 15-bit domain",
     "computedBy": "reference-side",
-    "source_frame900_sha256": "c1fdc4000e12ab203271b4ce20d85894ba32a56370eadc42ae291747e4a2b712"
+    "source_frame900_sha256": "d74e1303d984ea7cbc6b810eaeec3a26f410d4d7c4c773cd1f692b6e9ff64dd0"
   },
   "under_black_pixels": 931,
   "verification_status": "recomputed against new dump (registers = frame 900, dump after last runFrame); source frame900.json sha256 in blind_1.source_frame900_sha256",
