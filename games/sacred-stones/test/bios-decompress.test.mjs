@@ -198,3 +198,55 @@ test('scanPointedBlocks 除了计数还给逐块清单（导出清单必须靠�
   // 同一 offset 不能出现两次
   assert.equal(lz.filter((b) => b.offset === 0x10).length, 1);
 });
+
+test('压缩比闸门 --self-test：dlen/clen > 8 的块必须被剔除（闸门有能力排除，不是恒真）', async () => {
+  const {scanPointedBlocks, FORMAT_LZ77} = await import('../src/extract/bios-decompress.js');
+  // 造一块高压缩比的合法块：1 个字面量 + 200 个「回引 len=18 / disp=1」。
+  // dlen = 1 + 200*18 = 3601，clen = 4(头) + 26(标志) + 1(字面量) + 400(回引) = 431
+  // ⇒ 比值约 8.35，超过 8，必须被压缩比闸门剔除。
+  const RUNS = 200;
+  const items = [{kind: 'literal', byte: 0x41}];
+  for (let i = 0; i < RUNS; i += 1) items.push({kind: 'run', len: 18, disp: 1});
+  const dlen = 1 + RUNS * 18;
+
+  const groups = [];
+  for (let i = 0; i < items.length; i += 8) groups.push(items.slice(i, i + 8));
+  const body = [];
+  for (const group of groups) {
+    let flagByte = 0;
+    // 标志位是**从 bit7 开始**被消费的（先高位），写反会让整块解成乱码
+    group.forEach((item, bit) => {
+      if (item.kind === 'run') flagByte |= 1 << (7 - bit);
+    });
+    body.push(flagByte);
+    for (const item of group) {
+      if (item.kind === 'literal') body.push(item.byte);
+      else {
+        const len = item.len - 3;
+        const disp = item.disp - 1;
+        body.push(((len & 0xf) << 4) | ((disp >> 8) & 0xf));
+        body.push(disp & 0xff);
+      }
+    }
+  }
+
+  const rom = new Uint8Array(0x400);
+  // 4 字节对齐的指针字，指向 0x08000010
+  rom[0] = 0x10; rom[3] = 0x08;
+  const offset = 0x10;
+  rom[offset] = 0x10;
+  rom[offset + 1] = dlen & 0xff;
+  rom[offset + 2] = (dlen >> 8) & 0xff;
+  rom[offset + 3] = (dlen >> 16) & 0xff;
+  rom.set(body, offset + 4);
+
+  const noGate = scanPointedBlocks(rom, {maxRatio: {[FORMAT_LZ77]: Number.POSITIVE_INFINITY}})
+    .blocks.filter((b) => b.format === FORMAT_LZ77 && b.offset === offset);
+  const withGate = scanPointedBlocks(rom).blocks
+    .filter((b) => b.format === FORMAT_LZ77 && b.offset === offset);
+
+  assert.equal(noGate.length, 1, '关掉压缩比闸门时这块必须能解出来（否则测的不是闸门）');
+  assert.ok(noGate[0].dlen / noGate[0].clen > 8, `这块的压缩比必须真的超过 8，实际 ${noGate[0].dlen / noGate[0].clen}`);
+  assert.equal(noGate[0].dlen, dlen, 'dlen 必须精确达到头部声明');
+  assert.equal(withGate.length, 0, '开着压缩比闸门时必须被剔除——否则这道闸门是恒真的');
+});

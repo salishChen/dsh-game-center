@@ -297,7 +297,8 @@ export function scanPointedBlocks(bytes, options = {}) {
   // blocks：逐个通过闸门的块。导出清单必须用它，否则别人只拿到计数、
   // 没法做集合差——而"只报一个数"正是上一轮数字被当成事实传下去的原因。
   const blocks = [];
-  const rejected = {unalignedOrImplausible: 0, undecodable: 0, ratioTooHigh: 0};
+  const rejected = {unalignedOrImplausible: 0, undecodable: 0, ratioTooHigh: 0, outOfBounds: 0, dlenExceedsRom: 0};
+  let maxRatioObserved = 0;
   const seen = new Set();
   for (const offset of pointers) {
     if (!isPlausibleBlockOffset(bytes, offset)) {
@@ -315,7 +316,25 @@ export function scanPointedBlocks(bytes, options = {}) {
       rejected.undecodable += 1;
       continue;
     }
-    if (result.output.length / result.consumed > FORMAT_MAX_RATIO[format]) {
+    // ── 物理不可能的两条守卫（format 类，可以永久写死）──────────────
+    // 与压缩比那类"统计上少见"的闸门不同：这两条挡的是物理上做不到的事，
+    // 改口径也不会失效。
+    if (offset + result.consumed > bytes.length) {
+      rejected.outOfBounds += 1;
+      continue;
+    }
+    if (result.output.length > bytes.length) {
+      rejected.dlenExceedsRom += 1;
+      continue;
+    }
+    // ── 压缩比：诊断字段，不是筛选判据 ───────────────────────────────
+    // 实测：洗牌基线（种子 20261030）里假阳性的 dlen/clen 最高只到 1.778，
+    // 8 这条线永远不会被噪声触及 —— 它剔除的全是真块（历史上有 25 块
+    // ratio 8.05~8.40 被误杀）。所以保留数值、不再参与筛选。
+    // 若将来要恢复筛选，必须先证明噪声能越过阈值，否则它只是在砍真块。
+    const ratio = result.output.length / result.consumed;
+    const ratioCap = options.maxRatio?.[format];
+    if (ratioCap !== undefined && ratio > ratioCap) {
       rejected.ratioTooHigh += 1;
       continue;
     }
@@ -324,12 +343,14 @@ export function scanPointedBlocks(bytes, options = {}) {
     stats[format].decompressedBytes += result.output.length;
     if (seen.has(offset)) continue;
     seen.add(offset);
+    if (ratio > maxRatioObserved) maxRatioObserved = ratio;
     blocks.push({
       offset,
       format,
       dlen: result.output.length,
       clen: result.consumed,
+      ratio,
     });
   }
-  return {pointers: pointers.length, stats, blocks, rejected};
+  return {pointers: pointers.length, stats, blocks, rejected, maxRatioObserved};
 }

@@ -52,6 +52,13 @@
     "dlen>8clen"
    ],
    "ok": true
+  },
+  {
+   "dlen": 256,
+   "clen": 281,
+   "labels": [],
+   "expect": [],
+   "ok": true
   }
  ],
  "offsets": {
@@ -4526,22 +4533,5 @@
    "0xa7e188",
    "0xaaeb24"
   ]
- },
- "ratio_semantics": "dlen_over_clen",
- "ratio_ambiguity": {
-  "dlen_over_clen": 25,
-  "clen_over_dlen": 0,
-  "note": "clen_over_dlen=0 是恒假条件，已弃用，保留仅作墓碑"
- },
- "residual_0xA1317E": {
-  "offset": "0xA1317E",
-  "dlen": 256,
-  "clen": 281,
-  "pointer_refs_aligned": 1,
-  "pointer_positions": [
-   "0x7B1C8"
-  ],
-  "pointer_inside_any_stream": false,
-  "verdict": "被指针引用（4 字节对齐，且指针本身不在任何已解流的压缩区间内）——所以它不是'未被引用'，是对方枚举漏收的 1 块"
  }
 }
