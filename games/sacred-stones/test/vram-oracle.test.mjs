@@ -51,6 +51,20 @@ test('VRAM 夹具自身自洽：哈希唯一、数量与声明一致', () => {
   assert.match(fixture.note, /未命中不等于不存在/, '范围声明必须在夹具里');
 });
 
+test('调色板也固定在夹具里：512 字节 BG 段，哈希与内容对得上', () => {
+  const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
+  const pal = fixture.bgPalette;
+  assert.ok(pal, '夹具必须带帧 900 的 BG 调色板，否则颜色只能靠猜');
+  assert.equal(pal.bytes, 512, 'BG 调色板是 512 字节（16 bank × 16 色 × 2 字节）');
+  const raw = Buffer.from(pal.base64, 'base64');
+  assert.equal(raw.length, 512);
+  assert.equal(
+    createHash('sha256').update(raw).digest('hex'),
+    pal.sha256,
+    'base64 内容与 sha256 必须一致——否则"用这一帧的调色板"这句话就是假的',
+  );
+});
+
 test('LZ77 整块命中：0x00B5EFDC 解出的图块全部出现在标题画面 VRAM 里', {skip: !hasRom && '缺卡带（设 SS_ROM 或放到 artifacts/fe8-remake/fe8-zh.gba）'}, () => {
   const rom = new Uint8Array(readFileSync(romPath));
   const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
@@ -65,8 +79,7 @@ test('LZ77 整块命中：0x00B5EFDC 解出的图块全部出现在标题画面 
     if (!uniform(tile)) tiles.push(tile);
   }
 
-  const hashes = tiles.map(hash32);
-  assert.equal(tiles.length, 255, `图块数应当是 255（实际 ${tiles.length}）`);
+  const hashes = tiles.map(hash32);  assert.equal(tiles.length, 255, `图块数应当是 255（实际 ${tiles.length}）`);
   // 只验成员资格不够：一个"把同一图块回引 255 次"的错误实现也能过
   // （dlen 对、成员资格对、内容全错）。必须同时要求**去重后仍是 255**。
   assert.equal(new Set(hashes).size, 255, `图块内容必须两两不同（去重后 ${new Set(hashes).size} 个）`);

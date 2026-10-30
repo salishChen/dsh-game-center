@@ -55,6 +55,10 @@ for (let i = 0; i < frames; i += 1) gba.runFrame();
 const snap = gba.serialize();
 const vramBytes = Uint8Array.from(snap.bus.vram);
 const paletteBytes = Uint8Array.from(snap.bus.palette);
+// 4bpp 的像素是**索引**，颜色来自 BG 调色板 RAM（前 512 字节 = 16 bank × 16 色）。
+// 这块内存不在 VRAM 里，必须单独抓：判据是「用这一帧的调色板还原这一帧的图块」，
+// 一旦缺失就只能去猜或从 ROM 里另找调色板，两种做法都不构成判据。
+const bgPalette = paletteBytes.subarray(0, 512);
 
 const hash32 = (buf) => createHash('sha1').update(buf).digest('hex').slice(0, 16);
 const uniform = (tile) => {
@@ -101,6 +105,10 @@ const summary = {
     note: '本结果只覆盖这一帧加载进 VRAM 的图形块；未命中不等于不存在（可能这一帧没加载、可能运行时拼装、可能被补丁改过）。要分母必须多状态取并集。',
   },
   vramTilesInVram: vramTiles.size,
+  bgPalette: {
+    bytes: bgPalette.length,
+    sha256: createHash('sha256').update(bgPalette).digest('hex'),
+  },
   blocksWithHits: hits.length,
   tilesMatchedTotal: hits.reduce((s, h) => s + h.matched, 0),
   top: hits.slice(0, 20),
@@ -110,6 +118,7 @@ mkdirSync(outDir, {recursive: true});
 writeFileSync(join(outDir, 'vram-match.json'), `${JSON.stringify(summary, null, 2)}\n`);
 writeFileSync(join(outDir, 'vram-tiles.bin'), Buffer.from(vramBytes));
 writeFileSync(join(outDir, 'vram-palette.bin'), Buffer.from(paletteBytes));
+writeFileSync(join(outDir, 'vram-palette-bg.bin'), Buffer.from(bgPalette));
 
 // --emit-fixture：把「这一帧 VRAM 里出现过的图块哈希」固化成回归夹具。
 // 夹具只含哈希、不含像素数据，进仓库无版权问题；测试用它比对解码器输出，
@@ -125,6 +134,13 @@ if (fixturePath) {
       : 'unknown',
     tileCount: tiles.length,
     tiles,
+    // 调色板原始 512 字节（BG 段）连同哈希一起存：判据是「用这一帧的调色板还原
+    // 这一帧的图块」，只存哈希没法真的去还原颜色，所以原始值也留一份。
+    bgPalette: {
+      bytes: bgPalette.length,
+      sha256: createHash('sha256').update(bgPalette).digest('hex'),
+      base64: Buffer.from(bgPalette).toString('base64'),
+    },
   };
   writeFileSync(resolve(fixturePath), `${JSON.stringify(fixture, null, 2)}\n`);
   console.log(`fixture → ${resolve(fixturePath)}（${tiles.length} 个图块哈希）`);
