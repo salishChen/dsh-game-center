@@ -13,6 +13,15 @@
 //   * 256 色模式没有 bank，16 色模式的 bank 来自 attr2 bit12；
 //   * 索引 0 恒为透明，且**不参与**翻转后的错位补偿。
 
+// 调色板 RAM 前 512 字节是 BG 的 16 个 bank，OBJ 的 16 个 bank 从 0x200 开始。
+// 这里原来写成 256（= 0x100），正好落在 BG bank 中间——颜色不会报错，只会安静地错。
+const OBJ_PALETTE_OFFSET = 0x200;
+
+// OBJ 的图块基址是 0x06010000，不是 0x06000000：vram 数组从 0x06000000 起算，
+// 所以精灵图块地址必须再加 0x10000。漏掉这一项，读到的永远是 BG 图块区——
+// 数据看起来"像"图块、颜色"像"对的，只有形状散架，极难自查。
+const OBJ_TILE_BASE = 0x10000;
+
 const SCREEN_W = 240;
 const SCREEN_H = 160;
 
@@ -100,11 +109,11 @@ export function objTileAddress(obj, px, py, oneDimensional) {
     // 1D：图块号沿着一行接一行连续排，行跨度 = 精灵宽 / 8 块
     const tilesPerRow = obj.width / TILE;
     const tile = obj.tileIndex + tileRow * tilesPerRow + tileCol;
-    return tile * bytesPerTile;
+    return OBJ_TILE_BASE + tile * bytesPerTile;
   }
   // 2D：图块号按 32×32 的整屏图块表排布，行跨度固定 32 块
   const tile = (obj.tileIndex & 0x3ff) + tileRow * 0x20 + tileCol;
-  return tile * bytesPerTile;
+  return OBJ_TILE_BASE + tile * bytesPerTile;
 }
 
 /** 读精灵像素的调色板索引（0 = 透明）。 */
@@ -136,7 +145,8 @@ export function drawObj(image, obj, {vram, palette, oneDimensional = true}) {
       const index = objPixelIndex(obj, vram, srcX, srcY, oneDimensional);
       if (index === 0) continue;
       const palOffset = (obj.colorMode8bpp ? index : obj.paletteBank * 16 + index) * 2;
-      const bgr555 = palette[256 + palOffset] | (palette[256 + palOffset + 1] << 8);
+      const at = OBJ_PALETTE_OFFSET + palOffset;
+      const bgr555 = palette[at] | (palette[at + 1] << 8);
       const dst = (sy * SCREEN_W + sx) * 4;
       image[dst + 0] = expand5(bgr555 & 0x1f);
       image[dst + 1] = expand5((bgr555 >> 5) & 0x1f);

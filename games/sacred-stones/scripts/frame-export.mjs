@@ -66,12 +66,25 @@ const payload = {
   palette_sha256: sha256(palette),
 };
 
-// 自身摘要：覆盖除 self_sha256 之外的全部字段，规范化（键按插入顺序，已是固定顺序）。
-const body = JSON.stringify(payload);
-payload.self_sha256 = sha256(Buffer.from(body, 'utf8'));
+// 自身摘要的定义必须写死、且能被任何语言独立复核：
+//
+//   self_sha256 = sha256( 文件字节，其中 self_sha256 字段的值被替换成 64 个 '0' )
+//
+// 不用"去掉该字段再序列化"：那样依赖键序与缩进，换个语言重算很可能对不上，
+// 而一个对不上的自校验字段比没有它更坏——它长得像"已校验"。
+const ZEROS = '0'.repeat(64);
+const placeholderText = `${JSON.stringify({...payload, self_sha256: ZEROS}, null, 2)}\n`;
+payload.self_sha256 = sha256(Buffer.from(placeholderText, 'utf8'));
+const text = placeholderText.replace(ZEROS, payload.self_sha256);
+
+// 写完前自检：把真值换回占位符，必须重新得出同一个摘要。
+if (sha256(Buffer.from(text.replace(payload.self_sha256, ZEROS), 'utf8')) !== payload.self_sha256) {
+  console.error('自校验失败：替换回占位符后摘要不一致');
+  process.exit(1);
+}
 
 mkdirSync(dirname(outPath), {recursive: true});
-writeFileSync(outPath, `${JSON.stringify(payload, null, 2)}\n`);
+writeFileSync(outPath, text);
 
 console.log(`写出 ${outPath}`);
 console.log(`frame ${frames}`);
