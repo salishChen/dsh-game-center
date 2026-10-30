@@ -80,6 +80,11 @@ lines.push('# sacred-stones 压缩块清单（指针枚举口径，游戏实现�
 lines.push(`# rom_sha256=${romSha256}`);
 lines.push(`# rom_bytes=${bytes.length}`);
 lines.push('# 生成器=games/sacred-stones/scripts/dump-block-list.mjs');
+lines.push(`# 生成器sha256=${createHash('sha256').update(readFileSync(new URL(import.meta.url))).digest('hex')}`);
+lines.push(`# 解码器=games/sacred-stones/src/extract/bios-decompress.js`);
+lines.push(`# 解码器sha256=${createHash('sha256').update(readFileSync(new URL('../src/extract/bios-decompress.js', import.meta.url))).digest('hex')}`);
+lines.push('# 有效期声明：清单的有效期 = 上面这份解码器 sha256 的有效期。解码器一改，本清单立即过期，');
+lines.push('#   判据是 `sha256sum src/extract/bios-decompress.js` 是否等于上面那行——不要靠 commit 先后去猜。');
 lines.push('#');
 lines.push('# 本文件的口径（对方须逐条确认或给出相反取值）：');
 lines.push('# 1. dlen：精确相等（解出长度必须等于头部声明的 dlen，任何剩余都算失败）；');

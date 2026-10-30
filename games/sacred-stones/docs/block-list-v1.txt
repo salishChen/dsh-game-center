@@ -2,6 +2,11 @@
 # rom_sha256=167ed57921c24f841108f46eabc33cb10e10f141b09d0fa6e75b5c5add3e4df0
 # rom_bytes=16777216
 # 生成器=games/sacred-stones/scripts/dump-block-list.mjs
+# 生成器sha256=2eb577c5409e319e1086b98a8d9c817aa44b3c159ff7890066195e584ec5a8e1
+# 解码器=games/sacred-stones/src/extract/bios-decompress.js
+# 解码器sha256=30c392ad71612eb6df9a317bcdaa06cae18e789fa128cf0c8e96ecd3a9af599e
+# 有效期声明：清单的有效期 = 上面这份解码器 sha256 的有效期。解码器一改，本清单立即过期，
+#   判据是 `sha256sum src/extract/bios-decompress.js` 是否等于上面那行——不要靠 commit 先后去猜。
 #
 # 本文件的口径（对方须逐条确认或给出相反取值）：
 # 1. dlen：精确相等（解出长度必须等于头部声明的 dlen，任何剩余都算失败）；
