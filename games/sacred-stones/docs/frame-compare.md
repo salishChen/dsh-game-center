@@ -69,8 +69,32 @@ node scripts/compare-frame.mjs \
 
 退出码：`0` 无差异；`1` 有差异（数字在 stdout）；`2` 参数错误。
 
-## 期望图从哪来（这是硬要求）
+## 手写 PNG 解码器的交叉校验（一次性，已通过）
 
+`src/extract/png.js` 是零依赖手写实现。它的风险很特别：**如果它错了，期望图和
+截图会一起错，`compare-frame` 会报 0 差异——满分通过，结论完全错。**
+
+所以做了一次用外来实现（Python + Pillow）对同一批 PNG 的逐字节比对：
+
+| 样本 | 说明 | 结果 |
+| --- | --- | --- |
+| `filter0..4 -rgb.png` | 240×160，行滤波 0/1/2/3/4（Sub/Up/Average/Paeth 全覆盖） | RGBA 摘要 `1810f3047841cc2b`，两边一致 |
+| `filter0..4 -rgba.png` | 同上但带 alpha（含全透明区与 128 半透明区） | RGBA 摘要 `1af6cd1051c8da2b`，两边一致 |
+| `pil-rgb.png` / `pil-rgba.png` | Pillow 自身写出的 PNG | 与上表同值，一致 |
+| `pil-paletted.png` | color type 3（索引色） | 按设计拒绝，并打出 IHDR 字段与可执行建议 |
+
+样本与脚本留在 `.botharness/png-crosscheck/`（不进仓库、不进运行时依赖）。
+**判据一句话：写解码器的人和验证解码器的人，不能是同一次判断。**
+
+遇到不支持的格式时报错长这样，为的是一次沟通解决，而不是"请重截"三轮：
+
+```
+不支持的 PNG：只支持 RGB/RGBA
+  IHDR: width=240 height=160 bitDepth=8 colorType=3(索引色(paletted)) interlace=0
+  → 请导出为 24 位 RGB 或 32 位 RGBA、非隔行（索引色请先转成 RGB）
+```
+
+## 期望图从哪来（这是硬要求）
 期望图**必须**由「帧 900 的 VRAM 图块 + 帧 900 的 BG 调色板 + 图块地图」三者合成，
 且图块与调色板都固定在夹具里：
 

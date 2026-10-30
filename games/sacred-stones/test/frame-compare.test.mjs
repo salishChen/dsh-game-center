@@ -34,6 +34,34 @@ test('PNG 拒绝非 PNG 字节，且报的是人话', () => {
   assert.throws(() => decodePng(Buffer.from('not a png at all')), /不是 PNG/);
 });
 
+test('遇到索引色 PNG：报错必须点名 IHDR 字段和该怎么做', () => {
+  // 只有 IHDR 头也足以触发"不支持"，报错信息是给人看的，不是给日志看的
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(240, 0);
+  ihdr.writeUInt32BE(160, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 3; // 索引色
+  ihdr[12] = 0;
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(13, 0);
+  const png = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    length,
+    Buffer.from('IHDR', 'ascii'),
+    ihdr,
+    Buffer.alloc(4),
+  ]);
+  assert.throws(
+    () => decodePng(png),
+    (err) => {
+      assert.match(err.message, /width=240 height=160 bitDepth=8 colorType=3/, '必须原样打出 IHDR');
+      assert.match(err.message, /索引色/, '必须说人话解释 colorType 3');
+      assert.match(err.message, /请导出为 24 位 RGB 或 32 位 RGBA/, '必须给出可执行的下一步');
+      return true;
+    },
+  );
+});
+
 test('最近邻放大图缩回原生：2x 图的每个像素块取左上角，不是双线性混合', () => {
   const double = solid(480, 320, [0, 0, 0]);
   // 只在 (0,0) 期望红：2x 图里对应 2x2 区块

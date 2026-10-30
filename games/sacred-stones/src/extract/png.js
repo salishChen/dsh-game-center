@@ -16,6 +16,20 @@ const paeth = (a, b, c) => {
   return c;
 };
 
+// 报错要说清"为什么不要这张图"，否则给图的人只能靠猜重截一轮。
+// 规格来自规范：colorType 0=灰度 2=RGB 3=索引 4=灰度+A 6=RGBA。
+const COLOR_TYPE_NAME = {0: '灰度', 2: 'RGB', 3: '索引色(paletted)', 4: '灰度+Alpha', 6: 'RGBA'};
+
+function unsupportedMessage(ihdr, reason) {
+  const {width, height, bitDepth, colorType, interlace} = ihdr;
+  return (
+    `不支持的 PNG：${reason}\n` +
+    `  IHDR: width=${width} height=${height} bitDepth=${bitDepth} ` +
+    `colorType=${colorType}(${COLOR_TYPE_NAME[colorType] ?? '未知'}) interlace=${interlace}\n` +
+    '  → 请导出为 24 位 RGB 或 32 位 RGBA、非隔行（索引色请先转成 RGB）'
+  );
+}
+
 function unfilter(raw, width, height, bpp) {
   const stride = width * bpp;
   const out = Buffer.alloc(stride * height);
@@ -46,8 +60,7 @@ function unfilter(raw, width, height, bpp) {
   return out;
 }
 
-export function decodePng(bytes) {
-  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+export function decodePng(bytes) {  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
   if (!buf.subarray(0, 8).equals(PNG_SIG)) throw new Error('不是 PNG：签名不符');
 
   let offset = 8;
@@ -76,9 +89,9 @@ export function decodePng(bytes) {
     }
   }
 
-  if (bitDepth !== 8) throw new Error(`只支持 8 位 PNG（实际 ${bitDepth} 位）`);
-  if (interlace !== 0) throw new Error('不支持隔行 PNG');
-  if (colorType !== 2 && colorType !== 6) throw new Error(`只支持 RGB/RGBA（实际颜色类型 ${colorType}）`);
+  if (bitDepth !== 8) throw new Error(unsupportedMessage({width, height, bitDepth, colorType, interlace}, '只支持 8 位'));
+  if (interlace !== 0) throw new Error(unsupportedMessage({width, height, bitDepth, colorType, interlace}, '不支持隔行'));
+  if (colorType !== 2 && colorType !== 6) throw new Error(unsupportedMessage({width, height, bitDepth, colorType, interlace}, '只支持 RGB/RGBA'));
 
   const bpp = colorType === 6 ? 4 : 3;
   const raw = inflateSync(Buffer.concat(idat));
