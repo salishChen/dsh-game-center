@@ -1,8 +1,13 @@
 # rom_sha256=167ed57921c24f841108f46eabc33cb10e10f141b09d0fa6e75b5c5add3e4df0
 # generator=games/sacred-stones/tools/lz77-variants.py
-# generator_sha256=a47627705d573137a1f68ec12607b5d8323ae92341d2c7ad7810b3281d4c0f4c
-# gates: pointer-word 4-byte aligned, top byte 0x08, offset<len; header nibble 0x1X; dlen exact; backref pos>=0; overlap allowed
-# gates_applied=none  —— 本清单是**未加闸门**的原始基线；下面的 dlen<32 / dlen>8*clen 只是可选过滤器，不是产出条件
+# enumeration=pointer-driven
+# ptr_alignment=4
+# gates_applied=none
+# dlen_semantics=exact
+# header_byte=exact_0x10   (资产表口径：低 4 位必须为 0)
+# header_byte_note=本基线含 1 块 0x14 头（0xA1317E），严格口径下不进资产表；放宽版(>>4==1)全量 4,834 有非单调副作用，仅作对照
+# gates_applied=none  —— 原始基线；下面两行是 self-check 统计，不是产出条件
+# self_check: dlen<32=12, dlen>8*clen=25
 # rows=4463
 # offset	dlen	clen
 0x0DCD04	9	13
