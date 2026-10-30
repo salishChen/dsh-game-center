@@ -25,6 +25,12 @@ effect = (bldcnt >> 6) & 3
 first_target = [n for n in range(4) if bldcnt & (1 << n)]
 second_target = [n for n in range(4) if bldcnt & (1 << (8 + n))]
 bd_in_second = bool(bldcnt & (1 << 13))
+# machine-pinned BLDCNT parse (bit n = BGn 第一目标, bit 8+n = BGn 第二目标, bit13 = BD)
+if bldcnt == 0x0C42:
+    assert first_target == [1], first_target
+    assert second_target == [2, 3], second_target
+    assert bd_in_second is False
+    assert (bldcnt >> 6) & 3 == 1  # alpha
 
 COLORS = [struct.unpack_from("<H", pal, i * 2)[0] for i in range(512)]
 
@@ -211,6 +217,13 @@ summ = {
     "blendMode": {0: "none", 1: "alpha", 2: "brightness_up", 3: "brightness_down"}[effect],
     "secondTarget": second_target,
     "bd": bd_in_second,
+    "bldcnt_parse": {
+        "raw": "0x%04X" % bldcnt,
+        "mode": {0: "none", 1: "alpha", 2: "brightness_up", 3: "brightness_down"}[(bldcnt >> 6) & 3],
+        "firstTarget": ["BG%d" % n for n in first_target],
+        "secondTarget": ["BG%d" % n for n in second_target],
+        "backdrop": bd_in_second,
+    },
     "eva": eva,
     "evb": evb,
     "hofs": hofs,

@@ -14,6 +14,18 @@
     3
   ],
   "bd": false,
+  "bldcnt_parse": {
+    "raw": "0x0C42",
+    "mode": "alpha",
+    "firstTarget": [
+      "BG1"
+    ],
+    "secondTarget": [
+      "BG2",
+      "BG3"
+    ],
+    "backdrop": false
+  },
   "eva": 8,
   "evb": 8,
   "hofs": [
