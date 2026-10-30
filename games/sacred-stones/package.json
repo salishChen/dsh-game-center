@@ -1,12 +1,13 @@
 {
   "name": "@dsh-games/sacred-stones",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "description": "火焰纹章 圣魔之光石 网页复刻（从 ROM 逆向重写，不打包 ROM）",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "test:kernels": "node --test test/kernel-integration.test.mjs"
+    "test:kernels": "node --test test/kernel-integration.test.mjs",
+    "build": "node scripts/build.mjs"
   },
   "dependencies": {
     "@gba-kit/arm-emulator": "0.8.0",
