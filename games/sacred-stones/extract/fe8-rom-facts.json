@@ -1,0 +1,617 @@
+{
+  "schema": "fe8-rom-facts/1",
+  "file": {
+    "path": "artifacts/fe8-remake/fe8-zh.gba",
+    "size_bytes": 16777216,
+    "sha256": "167ed57921c24f841108f46eabc33cb10e10f141b09d0fa6e75b5c5add3e4df0"
+  },
+  "header": {
+    "entry": {
+      "raw_hex": "2e 00 00 ea",
+      "opcode": "ARM B (0xEA)",
+      "imm24": 46,
+      "target": "0x000000C0",
+      "arithmetic": "0x08 + 46*4 = 0xC0",
+      "rom_base_target": "0x080000C0"
+    },
+    "nintendo_logo_0x04_0x9F": {
+      "bytes": 156,
+      "matches_reference": true
+    },
+    "title_0xA0": "FIREEMBLEM8",
+    "game_code_0xAC": "BE8J",
+    "maker_code_0xB0": "01",
+    "fixed_0xB2": 150,
+    "main_unit_code_0xB3": 0,
+    "device_type_0xB4": 0,
+    "reserved_0xB5_0xBB": "00 00 00 00 00 00 00",
+    "software_version_0xBC": 0,
+    "header_complement_0xBD": 215,
+    "reserved_0xBE_0xBF": "00 00",
+    "checksum": {
+      "sum_0xA0_0xBC": 1296,
+      "computed": 215,
+      "stored": 215,
+      "pass": true
+    }
+  },
+  "backup": {
+    "present": [
+      "SRAM_F_V"
+    ],
+    "absent": [
+      "EEPROM_V",
+      "SRAM_V",
+      "FLASH_V",
+      "FLASH512_V",
+      "FLASH1M_V"
+    ],
+    "hits": [
+      {
+        "signature": "SRAM_F_V",
+        "offset": 5731192,
+        "offset_hex": "0x577378",
+        "context_ascii": "SRAM_F_V103..c...*..!d.."
+      },
+      {
+        "signature": "SRAM_F_V",
+        "offset": 12288749,
+        "offset_hex": "0xBB82ED",
+        "context_ascii": "SRAM_F_VA1...j....i.)k.."
+      },
+      {
+        "signature": "SRAM_F_V",
+        "offset": 12332573,
+        "offset_hex": "0xBC2E1D",
+        "context_ascii": "SRAM_F_VA1...j....i.)k.."
+      }
+    ],
+    "verdict": {
+      "save_type": "SRAM",
+      "capacity_bytes": 32768,
+      "capacity_human": "32 KiB",
+      "basis": "SRAM_F_V = 256 Kbit SRAM（3.0V 电压）",
+      "matched_signature": "SRAM_F_V"
+    }
+  },
+  "entropy": {
+    "block_size": 4096,
+    "thresholds": {
+      "high": 7.2,
+      "low": 1.0
+    },
+    "file_entropy": 6.7166,
+    "block_entropy_mean": 5.5224,
+    "high_runs_top20": [
+      {
+        "offset": 970752,
+        "offset_hex": "0x0ED000",
+        "length": 372736,
+        "min": 7.2498,
+        "max": 7.933
+      },
+      {
+        "offset": 2310144,
+        "offset_hex": "0x234000",
+        "length": 184320,
+        "min": 7.2639,
+        "max": 7.9424
+      },
+      {
+        "offset": 2531328,
+        "offset_hex": "0x26A000",
+        "length": 114688,
+        "min": 7.3322,
+        "max": 7.8628
+      },
+      {
+        "offset": 2207744,
+        "offset_hex": "0x21B000",
+        "length": 98304,
+        "min": 7.3999,
+        "max": 7.8909
+      },
+      {
+        "offset": 2764800,
+        "offset_hex": "0x2A3000",
+        "length": 49152,
+        "min": 7.2598,
+        "max": 7.9272
+      },
+      {
+        "offset": 4964352,
+        "offset_hex": "0x4BC000",
+        "length": 45056,
+        "min": 7.2038,
+        "max": 7.8184
+      },
+      {
+        "offset": 2691072,
+        "offset_hex": "0x291000",
+        "length": 32768,
+        "min": 7.4299,
+        "max": 7.9249
+      },
+      {
+        "offset": 3915776,
+        "offset_hex": "0x3BC000",
+        "length": 28672,
+        "min": 7.2177,
+        "max": 7.7725
+      },
+      {
+        "offset": 5361664,
+        "offset_hex": "0x51D000",
+        "length": 28672,
+        "min": 7.3232,
+        "max": 7.9561
+      },
+      {
+        "offset": 4911104,
+        "offset_hex": "0x4AF000",
+        "length": 24576,
+        "min": 7.7527,
+        "max": 7.9275
+      },
+      {
+        "offset": 4939776,
+        "offset_hex": "0x4B6000",
+        "length": 20480,
+        "min": 7.2918,
+        "max": 7.6882
+      },
+      {
+        "offset": 5332992,
+        "offset_hex": "0x516000",
+        "length": 20480,
+        "min": 7.2474,
+        "max": 7.7001
+      },
+      {
+        "offset": 2510848,
+        "offset_hex": "0x265000",
+        "length": 16384,
+        "min": 7.3372,
+        "max": 7.7252
+      },
+      {
+        "offset": 3395584,
+        "offset_hex": "0x33D000",
+        "length": 16384,
+        "min": 7.2319,
+        "max": 7.4218
+      },
+      {
+        "offset": 4780032,
+        "offset_hex": "0x48F000",
+        "length": 16384,
+        "min": 7.6331,
+        "max": 7.7201
+      },
+      {
+        "offset": 7929856,
+        "offset_hex": "0x790000",
+        "length": 16384,
+        "min": 7.208,
+        "max": 7.299
+      },
+      {
+        "offset": 2187264,
+        "offset_hex": "0x216000",
+        "length": 12288,
+        "min": 7.5975,
+        "max": 7.8344
+      },
+      {
+        "offset": 2736128,
+        "offset_hex": "0x29C000",
+        "length": 12288,
+        "min": 7.6351,
+        "max": 7.8452
+      },
+      {
+        "offset": 3219456,
+        "offset_hex": "0x312000",
+        "length": 12288,
+        "min": 7.5744,
+        "max": 7.7273
+      },
+      {
+        "offset": 3235840,
+        "offset_hex": "0x316000",
+        "length": 12288,
+        "min": 7.3861,
+        "max": 7.6093
+      }
+    ],
+    "low_runs_top20": [
+      {
+        "offset": 15712256,
+        "offset_hex": "0xEFC000",
+        "length": 933888,
+        "min": -0.0,
+        "max": -0.0
+      },
+      {
+        "offset": 14970880,
+        "offset_hex": "0xE47000",
+        "length": 626688,
+        "min": -0.0,
+        "max": 0.8961
+      },
+      {
+        "offset": 12337152,
+        "offset_hex": "0xBC4000",
+        "length": 245760,
+        "min": -0.0,
+        "max": -0.0
+      },
+      {
+        "offset": 16658432,
+        "offset_hex": "0xFE3000",
+        "length": 118784,
+        "min": -0.0,
+        "max": 0.3647
+      },
+      {
+        "offset": 15675392,
+        "offset_hex": "0xEF3000",
+        "length": 20480,
+        "min": -0.0,
+        "max": -0.0
+      },
+      {
+        "offset": 10280960,
+        "offset_hex": "0x9CE000",
+        "length": 4096,
+        "min": 0.4405,
+        "max": 0.4405
+      }
+    ],
+    "high_block_count": 404,
+    "low_block_count": 476,
+    "total_blocks": 4096,
+    "last_nonzero_block_end": 16777216,
+    "tail_zero_bytes": 0
+  },
+  "compression": {
+    "LZ77": {
+      "header_candidates": 178966,
+      "valid_streams": 4951,
+      "covered_bytes": 8313958,
+      "histogram": {
+        "1024-4095": 2049,
+        "16384-65535": 90,
+        "256-1023": 833,
+        "262144-inf": 1,
+        "4096-16383": 1565,
+        "64-255": 384,
+        "65536-262143": 1,
+        "8-63": 28
+      },
+      "first_20_by_offset": [
+        {
+          "offset": 904452,
+          "offset_hex": "0x0DCD04",
+          "decompressed_size": 9
+        },
+        {
+          "offset": 904460,
+          "offset_hex": "0x0DCD0C",
+          "decompressed_size": 11
+        },
+        {
+          "offset": 904468,
+          "offset_hex": "0x0DCD14",
+          "decompressed_size": 13
+        },
+        {
+          "offset": 917572,
+          "offset_hex": "0x0E0044",
+          "decompressed_size": 8192
+        },
+        {
+          "offset": 918856,
+          "offset_hex": "0x0E0548",
+          "decompressed_size": 8192
+        },
+        {
+          "offset": 920020,
+          "offset_hex": "0x0E09D4",
+          "decompressed_size": 8192
+        },
+        {
+          "offset": 921132,
+          "offset_hex": "0x0E0E2C",
+          "decompressed_size": 8192
+        },
+        {
+          "offset": 922464,
+          "offset_hex": "0x0E1360",
+          "decompressed_size": 8192
+        },
+        {
+          "offset": 937484,
+          "offset_hex": "0x0E4E0C",
+          "decompressed_size": 6144
+        },
+        {
+          "offset": 940060,
+          "offset_hex": "0x0E581C",
+          "decompressed_size": 2048
+        },
+        {
+          "offset": 940504,
+          "offset_hex": "0x0E59D8",
+          "decompressed_size": 4096
+        },
+        {
+          "offset": 943460,
+          "offset_hex": "0x0E6564",
+          "decompressed_size": 2048
+        },
+        {
+          "offset": 945056,
+          "offset_hex": "0x0E6BA0",
+          "decompressed_size": 8192
+        },
+        {
+          "offset": 947524,
+          "offset_hex": "0x0E7544",
+          "decompressed_size": 8192
+        },
+        {
+          "offset": 950068,
+          "offset_hex": "0x0E7F34",
+          "decompressed_size": 8192
+        },
+        {
+          "offset": 952628,
+          "offset_hex": "0x0E8934",
+          "decompressed_size": 1200
+        },
+        {
+          "offset": 952904,
+          "offset_hex": "0x0E8A48",
+          "decompressed_size": 1200
+        },
+        {
+          "offset": 953196,
+          "offset_hex": "0x0E8B6C",
+          "decompressed_size": 1200
+        },
+        {
+          "offset": 953412,
+          "offset_hex": "0x0E8C44",
+          "decompressed_size": 1200
+        },
+        {
+          "offset": 953696,
+          "offset_hex": "0x0E8D60",
+          "decompressed_size": 1200
+        }
+      ],
+      "largest_10": [
+        {
+          "offset": 1678387,
+          "offset_hex": "0x199C33",
+          "decompressed_size": 2031617
+        },
+        {
+          "offset": 8087394,
+          "offset_hex": "0x7B6762",
+          "decompressed_size": 73899
+        },
+        {
+          "offset": 12268476,
+          "offset_hex": "0xBB33BC",
+          "decompressed_size": 34956
+        },
+        {
+          "offset": 12312300,
+          "offset_hex": "0xBBDEEC",
+          "decompressed_size": 34956
+        },
+        {
+          "offset": 1415248,
+          "offset_hex": "0x159850",
+          "decompressed_size": 32768
+        },
+        {
+          "offset": 1484016,
+          "offset_hex": "0x16A4F0",
+          "decompressed_size": 32768
+        },
+        {
+          "offset": 1553304,
+          "offset_hex": "0x17B398",
+          "decompressed_size": 32768
+        },
+        {
+          "offset": 1578512,
+          "offset_hex": "0x181610",
+          "decompressed_size": 32768
+        },
+        {
+          "offset": 1607816,
+          "offset_hex": "0x188888",
+          "decompressed_size": 32768
+        },
+        {
+          "offset": 8264608,
+          "offset_hex": "0x7E1BA0",
+          "decompressed_size": 32768
+        }
+      ]
+    },
+    "RLE": {
+      "header_candidates": 77755,
+      "valid_streams": 743,
+      "covered_bytes": 227646186,
+      "histogram": {
+        "1024-4095": 13,
+        "16384-65535": 75,
+        "256-1023": 11,
+        "262144-inf": 490,
+        "4096-16383": 25,
+        "64-255": 3,
+        "65536-262143": 109,
+        "8-63": 17
+      },
+      "first_20_by_offset": [
+        {
+          "offset": 10208,
+          "offset_hex": "0x0027E0",
+          "decompressed_size": 1836213
+        },
+        {
+          "offset": 33401,
+          "offset_hex": "0x008279",
+          "decompressed_size": 161793
+        },
+        {
+          "offset": 45610,
+          "offset_hex": "0x00B22A",
+          "decompressed_size": 2099296
+        },
+        {
+          "offset": 46427,
+          "offset_hex": "0x00B55B",
+          "decompressed_size": 3432544
+        },
+        {
+          "offset": 50912,
+          "offset_hex": "0x00C6E0",
+          "decompressed_size": 2162716
+        },
+        {
+          "offset": 58472,
+          "offset_hex": "0x00E468",
+          "decompressed_size": 1836213
+        },
+        {
+          "offset": 59633,
+          "offset_hex": "0x00E8F1",
+          "decompressed_size": 1720963
+        },
+        {
+          "offset": 68460,
+          "offset_hex": "0x010B6C",
+          "decompressed_size": 1836469
+        },
+        {
+          "offset": 72049,
+          "offset_hex": "0x011971",
+          "decompressed_size": 1207154
+        },
+        {
+          "offset": 72357,
+          "offset_hex": "0x011AA5",
+          "decompressed_size": 1207154
+        },
+        {
+          "offset": 80324,
+          "offset_hex": "0x0139C4",
+          "decompressed_size": 1836213
+        },
+        {
+          "offset": 88262,
+          "offset_hex": "0x0158C6",
+          "decompressed_size": 2621496
+        },
+        {
+          "offset": 108747,
+          "offset_hex": "0x01A8CB",
+          "decompressed_size": 76032
+        },
+        {
+          "offset": 110582,
+          "offset_hex": "0x01AFF6",
+          "decompressed_size": 1312260
+        },
+        {
+          "offset": 112597,
+          "offset_hex": "0x01B7D5",
+          "decompressed_size": 83521
+        },
+        {
+          "offset": 116616,
+          "offset_hex": "0x01C788",
+          "decompressed_size": 2165020
+        },
+        {
+          "offset": 124493,
+          "offset_hex": "0x01E64D",
+          "decompressed_size": 358449
+        },
+        {
+          "offset": 125133,
+          "offset_hex": "0x01E8CD",
+          "decompressed_size": 1079296
+        },
+        {
+          "offset": 128541,
+          "offset_hex": "0x01F61D",
+          "decompressed_size": 74224
+        },
+        {
+          "offset": 130414,
+          "offset_hex": "0x01FD6E",
+          "decompressed_size": 1849628
+        }
+      ],
+      "largest_10": [
+        {
+          "offset": 10945237,
+          "offset_hex": "0xA702D5",
+          "decompressed_size": 4194304
+        },
+        {
+          "offset": 5942094,
+          "offset_hex": "0x5AAB4E",
+          "decompressed_size": 4194096
+        },
+        {
+          "offset": 6037698,
+          "offset_hex": "0x5C20C2",
+          "decompressed_size": 4178947
+        },
+        {
+          "offset": 6267466,
+          "offset_hex": "0x5FA24A",
+          "decompressed_size": 4157663
+        },
+        {
+          "offset": 5786517,
+          "offset_hex": "0x584B95",
+          "decompressed_size": 4128448
+        },
+        {
+          "offset": 8840326,
+          "offset_hex": "0x86E486",
+          "decompressed_size": 4067472
+        },
+        {
+          "offset": 8162761,
+          "offset_hex": "0x7C8DC9",
+          "decompressed_size": 4067389
+        },
+        {
+          "offset": 5669908,
+          "offset_hex": "0x568414",
+          "decompressed_size": 3986569
+        },
+        {
+          "offset": 2441106,
+          "offset_hex": "0x253F92",
+          "decompressed_size": 3942181
+        },
+        {
+          "offset": 5875055,
+          "offset_hex": "0x59A56F",
+          "decompressed_size": 3936252
+        }
+      ]
+    }
+  }
+}

@@ -1,8 +1,10 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {parseAddressTable, assertRomMatches} from '../src/core/address-table.js';
+import {SUPPORTED_CART_SHA256} from '../src/rom-identity.js';
 
-const ROM = 'sha256:167ed57921c24f841108f46eabc33cb10e10f141b09d0fa6e75b5c5add3e4df0';
+// 受支持卡带的哈希只有一个来源（契约 §8.1）：从 src/rom-identity.js 取，测试里不写字面量。
+const ROM = `sha256:${SUPPORTED_CART_SHA256[0]}`;
 
 function table(entries = {cursorX: {address: '0x0202BCC4', type: 'u16'}}, romId = ROM) {
   return {schema: 1, romId, entries};

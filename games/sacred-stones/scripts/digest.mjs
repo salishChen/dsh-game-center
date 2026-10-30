@@ -53,22 +53,31 @@ export function bundleDigestOf(entries) {
   return `sha256:${sha256Hex(Buffer.from(canonical, 'utf8'))}`;
 }
 
-/** 只算 index.html + style.css 的清单摘要（平台安装记录里的 manifestDigest 语义）。 */
-export function manifestDigestOf(entries) {
-  const picked = entries.filter((e) => e.path === 'dist/index.html' || e.path === 'dist/style.css');
-  const canonical = JSON.stringify(picked.map(({path, size, sha256}) => ({path, size, sha256})));
-  return {manifestDigest: `sha256:${sha256Hex(Buffer.from(canonical, 'utf8'))}`, count: picked.length};
+/**
+ * manifestDigest = 'sha256:' + sha256hex( gamecenter.json 的原始字节 )
+ * 权威实现：`packages/dsh-gamecenter-catalog/src/install/bundleDigest.ts`
+ *   `calculateManifestDigest(content) => sha256Hex(content)`
+ *   `packages/dsh-gamecenter-catalog/src/install/installer.ts:70` 用它做 `verifyManifestDigest`。
+ *
+ * **不是**任何数组的摘要：不重排、不压缩、不 minify，文件里的换行与缩进原样计入。
+ * 等价于 `sha256sum gamecenter.json` 的输出加 `sha256:` 前缀。
+ * 一旦版本号改动，这个值必变——先定稿版本号，再报摘要。
+ */
+export function manifestDigestOfFile(filePath = join(pkgRoot, 'gamecenter.json')) {
+  return `sha256:${sha256Hex(readFileSync(filePath))}`;
 }
 
 function main() {
   const entries = collectDistEntries();
   const totalBytes = entries.reduce((sum, e) => sum + e.size, 0);
+  const manifestPath = join(pkgRoot, 'gamecenter.json');
   const report = {
     gameId: 'example.sacred-stones',
+    version: JSON.parse(readFileSync(manifestPath, 'utf8')).version,
     files: entries,
     totalBytes,
     bundleDigest: bundleDigestOf(entries),
-    ...manifestDigestOf(entries),
+    manifestDigest: manifestDigestOfFile(manifestPath),
   };
   if (process.argv.includes('--json')) {
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

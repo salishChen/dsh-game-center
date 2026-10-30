@@ -1,0 +1,150 @@
+{
+  "rom": {
+    "path": "artifacts/fe8-remake/fe8-zh.gba",
+    "size": 16777216,
+    "sha256": "167ed57921c24f841108f46eabc33cb10e10f141b09d0fa6e75b5c5add3e4df0"
+  },
+  "criterion": "high-nibble==1, strict decode, exact dlen, pointer 0x08xxxxxx",
+  "REAL": {
+    "rom_size": 16777216,
+    "words_in_gba_range": 68510,
+    "unique_valid_offsets": 4460,
+    "total_refs": 5672,
+    "total_compressed_bytes": 6023908,
+    "total_decompressed_bytes": 14095526,
+    "ratio_compressed_over_decompressed": 0.4274,
+    "top20_by_size": [
+      {
+        "offset_hex": "0x7E1BA0",
+        "dlen": 32768,
+        "clen": 14654,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0x188888",
+        "dlen": 32768,
+        "clen": 30597,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0x181610",
+        "dlen": 32768,
+        "clen": 29301,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0x17B398",
+        "dlen": 32768,
+        "clen": 25205,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0x16A4F0",
+        "dlen": 32768,
+        "clen": 27842,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0x159850",
+        "dlen": 32768,
+        "clen": 28753,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0x1608A4",
+        "dlen": 32608,
+        "clen": 18697,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0x1504B8",
+        "dlen": 31232,
+        "clen": 21949,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0x1651B0",
+        "dlen": 29728,
+        "clen": 21309,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0x174C50",
+        "dlen": 29376,
+        "clen": 26439,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0x78F150",
+        "dlen": 28672,
+        "clen": 22514,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0x155A78",
+        "dlen": 24576,
+        "clen": 15829,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0xBABE04",
+        "dlen": 20480,
+        "clen": 18325,
+        "refs": 9
+      },
+      {
+        "offset_hex": "0x5DB188",
+        "dlen": 20480,
+        "clen": 15259,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0xA75420",
+        "dlen": 20480,
+        "clen": 11173,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0xAB1C58",
+        "dlen": 20480,
+        "clen": 18011,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0xA1961C",
+        "dlen": 20480,
+        "clen": 11225,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0x926B14",
+        "dlen": 20480,
+        "clen": 14964,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0x92AB3C",
+        "dlen": 20480,
+        "clen": 15848,
+        "refs": 1
+      },
+      {
+        "offset_hex": "0x92EED8",
+        "dlen": 20480,
+        "clen": 13527,
+        "refs": 2
+      }
+    ]
+  },
+  "SHUFFLED": {
+    "rom_size": 16777216,
+    "words_in_gba_range": 40007,
+    "unique_valid_offsets": 0,
+    "total_refs": 0,
+    "total_compressed_bytes": 0,
+    "total_decompressed_bytes": 0,
+    "ratio_compressed_over_decompressed": null,
+    "top20_by_size": []
+  },
+  "seed": 20261030
+}

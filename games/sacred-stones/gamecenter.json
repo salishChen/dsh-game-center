@@ -2,9 +2,18 @@
   "schemaVersion": 1,
   "id": "example.sacred-stones",
   "name": "火焰之纹章 圣魔之光石",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "sdk": "^1.0.0",
-  "runtime": { "kind": "web", "entry": "dist/index.html" },
-  "categories": ["战棋", "角色扮演"],
-  "permissions": { "storage": "game-scoped", "directNetwork": false }
+  "runtime": {
+    "kind": "web",
+    "entry": "dist/index.html"
+  },
+  "categories": [
+    "战棋",
+    "角色扮演"
+  ],
+  "permissions": {
+    "storage": "game-scoped",
+    "directNetwork": false
+  }
 }
