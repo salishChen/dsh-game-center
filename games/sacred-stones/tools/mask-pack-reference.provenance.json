@@ -1,16 +1,22 @@
 {
-  "source_path": "tools/mask-pack/pack.mjs",
-  "source_commit": "8a1cc43e084945a42a1889545648393188b6cc39",
-  "source_state": "已入库；本产地章的全部 sha 都可由 `git show <source_commit>:<path>` 独立复算",
-  "source_sha256": "cae1d81d9e32e532e768ef37246839351935e2cf491a83c5e96a1d7e28047045",
-  "source_sha256_lf": "cae1d81d9e32e532e768ef37246839351935e2cf491a83c5e96a1d7e28047045",
-  "copy_path": "games/sacred-stones/tools/mask-pack-reference.mjs",
-  "copy_sha256": "cae1d81d9e32e532e768ef37246839351935e2cf491a83c5e96a1d7e28047045",
-  "copy_sha256_lf": "cae1d81d9e32e532e768ef37246839351935e2cf491a83c5e96a1d7e28047045",
-  "verify": {
-    "source": "git show 8a1cc43e084945a42a1889545648393188b6cc39:tools/mask-pack/pack.mjs | sha256sum",
-    "copy": "git show <本文件所在 commit>:games/sacred-stones/tools/mask-pack-reference.mjs | sha256sum"
+  "format_version": 2,
+  "source": {
+    "commit": "8a1cc43e084945a42a1889545648393188b6cc39",
+    "path": "tools/mask-pack/pack.mjs",
+    "sha256": "cae1d81d9e32e532e768ef37246839351935e2cf491a83c5e96a1d7e28047045",
+    "sha256_lf": "cae1d81d9e32e532e768ef37246839351935e2cf491a83c5e96a1d7e28047045"
   },
-  "eol_note": "两文件当前逐字节相同。仍记录 LF 规范化 sha，仅用于比较两份源码文本；PNG/dump 等字节产物一律用原始 sha，禁止规范化（规范化会把真实换行差异掩盖成\"一致\"）。",
-  "boundary": "刷新副本与重写本文件是同一次动作（本脚本）。手工两步会让副本与产地章对不上，此时唯一合法修法是重跑本脚本，不是放宽断言。"
+  "copy": {
+    "commit": "bdbc40a5c7950b73a2db1a36f95f39d4ef004d44",
+    "path": "games/sacred-stones/tools/mask-pack-reference.mjs",
+    "sha256": "cae1d81d9e32e532e768ef37246839351935e2cf491a83c5e96a1d7e28047045",
+    "sha256_lf": "cae1d81d9e32e532e768ef37246839351935e2cf491a83c5e96a1d7e28047045"
+  },
+  "notes": {
+    "state": "两个锚各记各的：源停在 source.commit，副本停在 copy.commit",
+    "verify": "git show <anchor.commit>:<anchor.path> | sha256sum（两侧各取各的锚，判定不读章里的 sha）",
+    "eol": "两文件当前逐字节相同。仍记录 LF 规范化 sha，仅用于比较两份源码文本；PNG/dump 等字节产物一律用原始 sha，禁止规范化。",
+    "boundary": "刷新副本与重写本文件是同一次动作（本脚本）。手工两步会让副本与产地章对不上，此时唯一合法修法是重跑本脚本，不是放宽断言。",
+    "no_timestamp": "本文件不含 refreshed_at：被校验的文件里只放被校验的东西，时间写在提交信息里。"
+  }
 }

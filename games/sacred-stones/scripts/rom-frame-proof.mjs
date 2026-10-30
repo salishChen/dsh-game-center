@@ -18,6 +18,7 @@ import {bootKernel} from '../src/app/boot.js';
 import {lz77Decompress, collectRomPointers, scanPointedBlocks} from '../src/extract/bios-decompress.js';
 import {renderBgStack} from '../src/extract/bg-render.js';
 import {compareFrames} from './compare-frame.mjs';
+import {assertFrameNo, expectedFrameFromArgv} from '../src/extract/frame-guard.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
@@ -153,8 +154,13 @@ const toRgba = (fb) => {
 };
 const diff = compareFrames({width: W, height: H, rgba: composite.rgba}, {width: W, height: H, rgba: toRgba(hardware)}, {tolerance: 0, quantizeBits: 3});
 
+// 帧号断言：本脚本跑 frames-1 帧后取快照、再跑 1 帧，被测量的是第 frames 帧。
+const frameNo = FRAMES;
+assertFrameNo(frameNo, expectedFrameFromArgv(process.argv, FRAMES), 'rom-frame-proof');
+
 const result = {
   frames: FRAMES,
+  frameNo,
   rom_sha256: createHash('sha256').update(rom).digest('hex'),
   blocksDecoded: decodedBlocks.length,
   tiles: {

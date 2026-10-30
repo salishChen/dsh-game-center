@@ -10,6 +10,7 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 
 import {bootKernel} from '../src/app/boot.js';
+import {assertFrameNo, expectedFrameFromArgv} from '../src/extract/frame-guard.js';
 import {renderTextBg, parseBgcnt} from '../src/extract/bg-render.js';
 import {packMaskSha256} from '../src/extract/mask-pack.js';
 import {decodePng, encodePng} from '../src/extract/png.js';
@@ -21,6 +22,8 @@ const FRAMES = Number(process.argv[2] ?? 900);
 const W = 240;
 const H = 160;
 
+// 本探针在 frames-1 帧后取快照，随后跑的两次实验都是第 frames 帧。
+assertFrameNo(FRAMES, expectedFrameFromArgv(process.argv, FRAMES), 'blindzone-legacy-probe');
 const rom = new Uint8Array(readFileSync(ROM));
 const gba = bootKernel(rom);
 for (let i = 0; i < FRAMES - 1; i += 1) gba.runFrame();
@@ -124,6 +127,7 @@ try {
 
 console.log(JSON.stringify({
   frames: FRAMES,
+  frameNo: FRAMES,
   legacySampledBldcnt: {withBlend: withBlend.sampled, noBlend: noBlend.sampled},
   legacyBlindPngSha256: createHash('sha256').update(blindPng).digest('hex'),
   comparison,
