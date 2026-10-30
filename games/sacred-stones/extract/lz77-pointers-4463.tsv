@@ -2,6 +2,7 @@
 # generator=games/sacred-stones/tools/lz77-variants.py
 # generator_sha256=a47627705d573137a1f68ec12607b5d8323ae92341d2c7ad7810b3281d4c0f4c
 # gates: pointer-word 4-byte aligned, top byte 0x08, offset<len; header nibble 0x1X; dlen exact; backref pos>=0; overlap allowed
+# gates_applied=none  —— 本清单是**未加闸门**的原始基线；下面的 dlen<32 / dlen>8*clen 只是可选过滤器，不是产出条件
 # rows=4463
 # offset	dlen	clen
 0x0DCD04	9	13
