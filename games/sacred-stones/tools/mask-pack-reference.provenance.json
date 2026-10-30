@@ -1,12 +1,16 @@
 {
   "source_path": "tools/mask-pack/pack.mjs",
-  "source_commit": null,
-  "source_state": "复制时上游文件处于工作区未提交状态（git 中无此路径），因此没有可引用的 commit",
+  "source_commit": "8a1cc43e084945a42a1889545648393188b6cc39",
+  "source_state": "已入库；本产地章的全部 sha 都可由 `git show <source_commit>:<path>` 独立复算",
   "source_sha256": "cae1d81d9e32e532e768ef37246839351935e2cf491a83c5e96a1d7e28047045",
   "source_sha256_lf": "cae1d81d9e32e532e768ef37246839351935e2cf491a83c5e96a1d7e28047045",
   "copy_path": "games/sacred-stones/tools/mask-pack-reference.mjs",
   "copy_sha256": "cae1d81d9e32e532e768ef37246839351935e2cf491a83c5e96a1d7e28047045",
   "copy_sha256_lf": "cae1d81d9e32e532e768ef37246839351935e2cf491a83c5e96a1d7e28047045",
-  "eol_note": "当前两文件逐字节相同（原始 sha 也相同）。仍同时记录 LF 规范化 sha：若某台机器上 .gitattributes 未生效，同内容会因 CRLF 而 sha 分家，判定必须用规范化值。",
-  "note": "只读副本。若上游改动而副本未跟（或副本被本地改动），规范化 sha 与声明的 source_sha256_lf / copy_sha256_lf 分家，测试会红。"
+  "verify": {
+    "source": "git show 8a1cc43e084945a42a1889545648393188b6cc39:tools/mask-pack/pack.mjs | sha256sum",
+    "copy": "git show <本文件所在 commit>:games/sacred-stones/tools/mask-pack-reference.mjs | sha256sum"
+  },
+  "eol_note": "两文件当前逐字节相同。仍记录 LF 规范化 sha，仅用于比较两份源码文本；PNG/dump 等字节产物一律用原始 sha，禁止规范化（规范化会把真实换行差异掩盖成\"一致\"）。",
+  "boundary": "刷新副本与重写本文件是同一次动作（本脚本）。手工两步会让副本与产地章对不上，此时唯一合法修法是重跑本脚本，不是放宽断言。"
 }

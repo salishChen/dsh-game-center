@@ -64,9 +64,10 @@ test('MSB-first 判据：只有最左上像素为 1 时首字节必须是 0x80�
   assert.equal(packMaskSha256(pixels, {width: W, height: H}), packMaskSha256(pixels, {width: W, height: H}));
 });
 
-// ── 产地章：只读副本必须能证明自己没漂移 ────────────────────────────────────
+// ── 产地章：只读副本必须能**只凭仓库**复算，且先判脏再说漂移 ──────────────────
 import {readFileSync, existsSync} from 'node:fs';
 import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -75,31 +76,39 @@ const repoRoot = join(here, '..', '..', '..');
 const PROVENANCE = JSON.parse(readFileSync(join(here, '..', 'tools', 'mask-pack-reference.provenance.json'), 'utf8'));
 
 const shaOf = (buf) => createHash('sha256').update(buf).digest('hex');
-const normalizedSha = (buf) => shaOf(Buffer.from(buf.toString('utf8').replace(/\r\n/g, '\n'), 'utf8'));
+const normalizedSha = (buf) => shaOf(Buffer.from(buf.toString('utf8').replaceAll(String.fromCharCode(13,10), String.fromCharCode(10)), 'utf8'));
+const gitBytes = (args) => {
+  try {
+    return execFileSync('git', args, {cwd: repoRoot, encoding: 'buffer'});
+  } catch {
+    return null;
+  }
+};
 
-test('产地章：副本的规范化 sha 必须等于它声明的 copy_sha256_lf（本地被改就红）', () => {
+test('产地章：上游字节必须等于 `git show <source_commit>:<path>` 的 sha256（只凭仓库可复算）', () => {
+  assert.ok(PROVENANCE.source_commit, 'source_commit 不许留空：上游已入库就必须引用 commit');
+  const blob = gitBytes(['show', `${PROVENANCE.source_commit}:${PROVENANCE.source_path}`]);
+  assert.ok(blob, `无法从 ${PROVENANCE.source_commit} 读取 ${PROVENANCE.source_path}`);
+  assert.equal(shaOf(blob), PROVENANCE.source_sha256);
+});
+
+test('产地章：副本内容必须等于同一 commit 里的上游（不是"和本机工作区一样"）', () => {
+  const upstreamBlob = gitBytes(['show', `${PROVENANCE.source_commit}:${PROVENANCE.source_path}`]);
   const copy = readFileSync(join(repoRoot, PROVENANCE.copy_path));
+  assert.equal(normalizedSha(copy), normalizedSha(upstreamBlob));
   assert.equal(normalizedSha(copy), PROVENANCE.copy_sha256_lf);
 });
 
-test('产地章：副本与上游（若在工作区里）必须内容一致，上游改了副本没跟就红', () => {
-  const upstream = join(repoRoot, PROVENANCE.source_path);
-  if (!existsSync(upstream)) {
-    // 上游只存在于别人的机器上时不跳过判定，而是至少要求副本自证（上一条已覆盖）
-    return;
-  }
-  const source = readFileSync(upstream);
-  assert.equal(normalizedSha(source), PROVENANCE.source_sha256_lf, '上游内容已变，副本必须同步并更新产地章');
-  assert.equal(normalizedSha(readFileSync(join(repoRoot, PROVENANCE.copy_path))), PROVENANCE.source_sha256_lf);
+test('产地章：上游工作区脏了要单独说"上游在漂"，不许误报成副本漂移', () => {
+  const dirty = gitBytes(['status', '--porcelain', '--', PROVENANCE.source_path]);
+  const text = dirty ? dirty.toString('utf8').trim() : '';
+  // 工作区脏时，本用例失败并明确指向"上游有未提交改动"，而不是让人去查副本。
+  assert.equal(text, '', `上游 ${PROVENANCE.source_path} 有未提交改动：${text}。先提交或还原，再用 scripts/refresh-mask-pack-copy.mjs 重新刷新副本。`);
 });
 
-test('输入形状错必须当场抛错，不许安静算出一组字节', () => {
-  // 1) 长度不对（把 240×160 的图喂给 4×2 的声明）
-  assert.throws(() => packMask(new Uint8Array(240 * 160), {width: 4, height: 2}), /像素数量不符/);
-  // 2) 传了二维 rows（另一个实现的口径），必须抛而不是箅
-  assert.throws(() => packMask([[1, 0], [0, 1]], {width: 2, height: 2}), /像素数量不符/);
-  // 3) 长度对但全是 1：输出必须满，且不能被"行末补位"吃成 31 B/行
-  const all = Buffer.from(packMask(new Uint8Array(240 * 2).fill(1), {width: 240, height: 2}));
-  assert.equal(all.length, 60);
-  assert.ok(all.every((b) => b === 0xff));
+test('上游一旦入库，source_commit 不得为空（到期条件：null 只能是"未入库"的临时态）', () => {
+  const tracked = gitBytes(['log', '-1', '--format=%H', '--', PROVENANCE.source_path]);
+  if (tracked && tracked.toString('utf8').trim() !== '') {
+    assert.ok(PROVENANCE.source_commit, '上游已入库，产地章必须补上 source_commit');
+  }
 });

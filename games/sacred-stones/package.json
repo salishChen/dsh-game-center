@@ -9,7 +9,8 @@
     "test:kernels": "node --test test/kernel-integration.test.mjs",
     "build": "node scripts/build.mjs && node scripts/check-dist.mjs",
     "digest": "node scripts/digest.mjs",
-    "build:verify": "node scripts/build.mjs && node scripts/check-dist.mjs && git diff --exit-code -- games/sacred-stones/dist"
+    "build:verify": "node scripts/build.mjs && node scripts/check-dist.mjs && git diff --exit-code -- games/sacred-stones/dist",
+    "pretest": "node ../../tools/mask-pack/check-drift.mjs"
   },
   "dependencies": {
     "@gba-kit/arm-emulator": "0.8.0",
