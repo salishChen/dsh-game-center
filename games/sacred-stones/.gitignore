@@ -1,0 +1,4 @@
+
+# 探针产物（可重跑，不进库）
+.botharness-mask/
+.botharness-romproof/

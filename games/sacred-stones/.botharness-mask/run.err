@@ -1,9 +1,0 @@
-{
-  "refused": "bldcnt-toggle-ineffective",
-  "bldcntWhileRendering": "0x0",
-  "bldcntAfterFrame": {
-    "withBlend": "0x0",
-    "noBlend": "0x0"
-  },
-  "hint": "两次配置抓帧时读回的 BLDCNT 相同：游戏在帧内把值改回去了，或补丁没写进去。盲区必须重算。"
-}
