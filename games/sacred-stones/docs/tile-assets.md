@@ -1,9 +1,10 @@
-# 图块资产表（严格口径，第一次合成）
+# 图块资产表（严格口径，按新 dump 重出）
 
 - 生成器：`games/sacred-stones/tools/build-tile-assets.py`
 - 候选集：`games/sacred-stones/extract/lz77-candidates.json`
 - 严格 scope：**头字节 `== 0x10`（逐块断言）且 `dlen >= 32`** → 4,450 块（4 个 `dlen<32` 碎片按 scope 跳过）
-- VRAM 快照：`.botharness/blocks-preview/vram-tiles.bin`（帧 900 标题画面，96 KiB / 3,072 槽）
+- VRAM 快照：`extract/frame900.json`（帧 900，`vram_sha256 73025eda…`，96 KiB / 3,072 槽；旧 `blocks-preview/vram-tiles.bin` 已退役）
+- 重出记录：按新 dump（`frame900.json` sha `c1fdc400…`）重跑，数字与首版一致（1,477/1,611、342 块、134 未命中、明文 0），正文结论沿用；旧 VRAM 产物不再引用
 - 产物：`extract/tile-assets.tsv`（1,477 行）、`extract/tile-assets-summary.json`
 
 ## 判据
