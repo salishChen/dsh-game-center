@@ -18,7 +18,12 @@ def load(path):
         s = line.strip()
         if not s or s.startswith("#"):
             continue
-        vals.append(int(s, 16) if s.lower().startswith("0x") else int(s, 10))
+        if s.lower().startswith("0x"):
+            vals.append(int(s, 16))
+        elif len(s) == 8 and all(c in "0123456789abcdefABCDEF" for c in s):
+            vals.append(int(s, 16))  # bare 8-digit hex export
+        else:
+            vals.append(int(s, 10))
     return vals
 
 
