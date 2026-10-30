@@ -2,6 +2,8 @@
 # generator=games/sacred-stones/tools/lz77-candidates.py
 # generator_sha256=058d6d0af985829af3955a24f34bc5dd04ebeb622d15ce2650a5b1a3cb755667
 # scope=strict_0x10 + dlen>=32
+# dlen_exact=true
+# assert_counts: bad_headers=0 header_assert_failures=0 skipped_scope=0
 # rows=4450
 # offset	dlen	clen
 0x0E0044	8192	1283

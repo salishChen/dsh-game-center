@@ -6,6 +6,8 @@
 # header_byte=exact_0x10
 # dlen_semantics=exact_truncating_tail  (达到 dlen 即停；最后一条 match 超长部分被截断，不判失败)
 # gates_applied=none   (dlen<32 为 scope 过滤，仅统计，不作用于本表)
+# dlen_exact=true
+# assert_counts: bad_headers=0 header_assert_failures=0 skipped_scope=4
 # rows=4454
 # offset	dlen	clen
 0x0DCD04	9	13
