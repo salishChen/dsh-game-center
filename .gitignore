@@ -34,3 +34,31 @@ packages/protocol/src/**/*.d.ts
 .tmp-composed.json
 artifacts/
 docs/phase1-candidate-manifest*.txt
+
+# 本地草稿区（BotHarness 会话产物：构建日志、临时脚本、ROM 与 tar 中间件）
+# 2026-10-27 加：这里曾有 2 个 16 MiB 的 GBA ROM 与多份 tar，裸 `git add -A` 会把它们永久写进历史。
+.botharness/
+
+# 内部交接与部署操作快照（含本机路径，不公开；本地保留）
+docs/phase0-host.md
+docs/phase1-restart-handoff.md
+docs/phase1-deploy-rollback-plan.md
+docs/handoffs/
+
+# ROM 镜像永不入库（版权 + 体积）
+*.gba
+
+# 商业 ROM / 主机镜像：永不入库（版权，见 docs 审核口径）
+*.gba
+*.gbc
+*.gb
+*.sfc
+*.smc
+*.nes
+*.n64
+*.z64
+
+# 圣魔之光石：发布产物必须与源码同一个 commit，否则装机读到的逻辑和台账对不上。
+# 否定必须写两行——父目录被排除时，只否定单个文件不生效。
+!games/sacred-stones/dist/
+!games/sacred-stones/dist/**

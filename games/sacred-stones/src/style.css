@@ -13,6 +13,11 @@
   box-sizing: border-box;
 }
 
+/* `hidden` 必须压过下面那些 display:flex：作者样式优先级高于 UA 的 [hidden] */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;

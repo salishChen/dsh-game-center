@@ -1,0 +1,241 @@
+:root {
+  --bg: #10141c;
+  --panel: #1a2130;
+  --line: #2b3446;
+  --text: #e6ebf5;
+  --muted: #96a2b8;
+  --accent: #6ea8fe;
+  --ok: #57c08a;
+  --error: #ef6b6b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* `hidden` 必须压过下面那些 display:flex：作者样式优先级高于 UA 的 [hidden] */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+.shell {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 16px 16px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bar h1 {
+  font-size: 18px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.fps {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.picker {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.picker .lead {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.picker .note {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.file-btn {
+  display: inline-block;
+  background: var(--accent);
+  color: #08101f;
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.file-btn input {
+  display: none;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.screen-wrap {
+  display: flex;
+  justify-content: center;
+  background: #000;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+canvas {
+  width: min(100%, calc((100vh - 320px) * 240 / 160));
+  image-rendering: pixelated;
+  aspect-ratio: 3 / 2;
+  background: #000;
+  touch-action: none;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+button {
+  background: #26314a;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+button.ghost {
+  background: transparent;
+}
+
+.usage {
+  color: var(--muted);
+  margin-left: auto;
+}
+
+.keys {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+kbd {
+  background: #26314a;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+}
+
+.saves {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.saves header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.saves h2 {
+  font-size: 15px;
+  margin: 0;
+}
+
+.saves ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.save-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #141a26;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.save-row.pool-auto {
+  opacity: 0.85;
+}
+
+.save-label {
+  display: flex;
+  flex-direction: column;
+  margin-right: auto;
+}
+
+.save-label span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.save-row .empty {
+  color: var(--muted);
+}
+
+.status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  min-height: 20px;
+}
+
+.status[data-tone="ok"] {
+  color: var(--ok);
+}
+
+.status[data-tone="error"] {
+  color: var(--error);
+}
+
+.cached {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.note.small {
+  font-size: 12px;
+  margin: 0;
+}

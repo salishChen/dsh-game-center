@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>火焰之纹章 圣魔之光石</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="bar">
+        <h1>火焰之纹章 · 圣魔之光石</h1>
+        <span id="fps" class="fps">—</span>
+      </header>
+
+      <section id="picker" class="picker">
+        <p class="lead">选择一个 GBA 卡带文件（<code>.gba</code>）开始。</p>
+        <p class="note">文件只在你的浏览器内存里运行，不上传、不写入任何服务器。</p>
+        <label class="file-btn">
+          <input id="rom-input" type="file" accept=".gba,.bin,application/octet-stream" />
+          <span>选择卡带文件</span>
+        </label>
+
+        <div class="cached">
+          <button id="use-cached" type="button" class="ghost" hidden>使用上次的卡带</button>
+          <button id="forget-cached" type="button" class="ghost" hidden>忘掉缓存的卡带</button>
+          <p id="cache-hint" class="note small"></p>
+        </div>
+      </section>
+
+      <section id="stage" class="stage" hidden>
+        <div class="screen-wrap">
+          <canvas id="screen" width="240" height="160"></canvas>
+        </div>
+
+        <div class="controls">
+          <button id="save-btn" type="button">存档</button>
+          <button id="saves-btn" type="button">存档列表</button>
+          <button id="exit-btn" type="button" class="ghost">退出并保存</button>
+          <span id="auto-usage" class="usage">自动档 0/20</span>
+        </div>
+
+        <p class="keys">
+          方向键 / WASD 移动 · <kbd>Z</kbd> A · <kbd>X</kbd> B · <kbd>Enter</kbd> Start · <kbd>Shift</kbd> Select ·
+          <kbd>Q</kbd> L · <kbd>E</kbd> R
+        </p>
+
+        <section id="saves-panel" class="saves" hidden>
+          <header>
+            <h2>存档</h2>
+            <button id="close-panel" type="button" class="ghost">关闭</button>
+          </header>
+          <ul id="saves-list"></ul>
+        </section>
+      </section>
+
+      <p id="status" class="status" data-tone="info"></p>
+    </main>
+
+    <script type="module" src="./game.js"></script>
+  </body>
+</html>
