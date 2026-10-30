@@ -38,6 +38,10 @@
       "blend_role": "first",
       "pixels_opaque": 14564,
       "distinct_colors": 1,
+      "palette_banks": [
+        15
+      ],
+      "distinct_palette_banks": 1,
       "top_colors": [
         {
           "color": "0000",
@@ -45,13 +49,119 @@
         }
       ],
       "tiles_used": 274,
-      "prio": 1
+      "prio": 1,
+      "index_histogram": [
+        {
+          "bank": 15,
+          "index": 13,
+          "pixels": 1685,
+          "palette_raw": "0000"
+        },
+        {
+          "bank": 15,
+          "index": 2,
+          "pixels": 1604,
+          "palette_raw": "0000"
+        },
+        {
+          "bank": 15,
+          "index": 11,
+          "pixels": 1500,
+          "palette_raw": "0000"
+        },
+        {
+          "bank": 15,
+          "index": 8,
+          "pixels": 1338,
+          "palette_raw": "0000"
+        },
+        {
+          "bank": 15,
+          "index": 12,
+          "pixels": 1308,
+          "palette_raw": "0000"
+        },
+        {
+          "bank": 15,
+          "index": 15,
+          "pixels": 1086,
+          "palette_raw": "0000"
+        },
+        {
+          "bank": 15,
+          "index": 6,
+          "pixels": 969,
+          "palette_raw": "0000"
+        },
+        {
+          "bank": 15,
+          "index": 4,
+          "pixels": 966,
+          "palette_raw": "0000"
+        },
+        {
+          "bank": 15,
+          "index": 10,
+          "pixels": 808,
+          "palette_raw": "0000"
+        },
+        {
+          "bank": 15,
+          "index": 7,
+          "pixels": 772,
+          "palette_raw": "0000"
+        },
+        {
+          "bank": 15,
+          "index": 14,
+          "pixels": 698,
+          "palette_raw": "0000"
+        },
+        {
+          "bank": 15,
+          "index": 5,
+          "pixels": 613,
+          "palette_raw": "0000"
+        },
+        {
+          "bank": 15,
+          "index": 3,
+          "pixels": 590,
+          "palette_raw": "0000"
+        },
+        {
+          "bank": 15,
+          "index": 9,
+          "pixels": 570,
+          "palette_raw": "0000"
+        },
+        {
+          "bank": 15,
+          "index": 1,
+          "pixels": 57,
+          "palette_raw": "0000"
+        }
+      ]
     },
     "2": {
       "state": "on",
       "blend_role": "second",
       "pixels_opaque": 6241,
       "distinct_colors": 78,
+      "palette_banks": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "distinct_palette_banks": 11,
       "top_colors": [
         {
           "color": "19F5",
@@ -67,13 +177,115 @@
         }
       ],
       "tiles_used": 133,
-      "prio": 2
+      "prio": 2,
+      "index_histogram": [
+        {
+          "bank": 7,
+          "index": 15,
+          "pixels": 763,
+          "palette_raw": "19F5"
+        },
+        {
+          "bank": 7,
+          "index": 9,
+          "pixels": 544,
+          "palette_raw": "1593"
+        },
+        {
+          "bank": 7,
+          "index": 5,
+          "pixels": 440,
+          "palette_raw": "2A9A"
+        },
+        {
+          "bank": 8,
+          "index": 15,
+          "pixels": 216,
+          "palette_raw": "2A9A"
+        },
+        {
+          "bank": 10,
+          "index": 6,
+          "pixels": 184,
+          "palette_raw": "3634"
+        },
+        {
+          "bank": 1,
+          "index": 10,
+          "pixels": 172,
+          "palette_raw": "3632"
+        },
+        {
+          "bank": 7,
+          "index": 3,
+          "pixels": 169,
+          "palette_raw": "1970"
+        },
+        {
+          "bank": 1,
+          "index": 12,
+          "pixels": 148,
+          "palette_raw": "19B0"
+        },
+        {
+          "bank": 8,
+          "index": 9,
+          "pixels": 146,
+          "palette_raw": "1615"
+        },
+        {
+          "bank": 8,
+          "index": 5,
+          "pixels": 122,
+          "palette_raw": "2A78"
+        },
+        {
+          "bank": 8,
+          "index": 8,
+          "pixels": 118,
+          "palette_raw": "3EDC"
+        },
+        {
+          "bank": 0,
+          "index": 8,
+          "pixels": 112,
+          "palette_raw": "256D"
+        },
+        {
+          "bank": 7,
+          "index": 13,
+          "pixels": 110,
+          "palette_raw": "2657"
+        },
+        {
+          "bank": 10,
+          "index": 4,
+          "pixels": 110,
+          "palette_raw": "29D2"
+        },
+        {
+          "bank": 9,
+          "index": 3,
+          "pixels": 109,
+          "palette_raw": "1970"
+        },
+        {
+          "bank": 6,
+          "index": 5,
+          "pixels": 106,
+          "palette_raw": "1E15"
+        }
+      ]
     },
     "3": {
       "state": "on",
       "blend_role": "second",
       "pixels_opaque": 38400,
       "distinct_colors": 15,
+      "palette_banks": [
+        14
+      ],
+      "distinct_palette_banks": 1,
       "top_colors": [
         {
           "color": "0A17",
@@ -89,14 +301,112 @@
         }
       ],
       "tiles_used": 255,
-      "prio": 3
+      "prio": 3,
+      "index_histogram": [
+        {
+          "bank": 14,
+          "index": 10,
+          "pixels": 4142,
+          "palette_raw": "0A17"
+        },
+        {
+          "bank": 14,
+          "index": 8,
+          "pixels": 3938,
+          "palette_raw": "0E59"
+        },
+        {
+          "bank": 14,
+          "index": 15,
+          "pixels": 3840,
+          "palette_raw": "0000"
+        },
+        {
+          "bank": 14,
+          "index": 11,
+          "pixels": 3338,
+          "palette_raw": "15F6"
+        },
+        {
+          "bank": 14,
+          "index": 12,
+          "pixels": 2828,
+          "palette_raw": "09B6"
+        },
+        {
+          "bank": 14,
+          "index": 9,
+          "pixels": 2814,
+          "palette_raw": "0E38"
+        },
+        {
+          "bank": 14,
+          "index": 7,
+          "pixels": 2608,
+          "palette_raw": "127A"
+        },
+        {
+          "bank": 14,
+          "index": 5,
+          "pixels": 2470,
+          "palette_raw": "16BC"
+        },
+        {
+          "bank": 14,
+          "index": 6,
+          "pixels": 2190,
+          "palette_raw": "129B"
+        },
+        {
+          "bank": 14,
+          "index": 1,
+          "pixels": 2072,
+          "palette_raw": "235F"
+        },
+        {
+          "bank": 14,
+          "index": 4,
+          "pixels": 2060,
+          "palette_raw": "1ADD"
+        },
+        {
+          "bank": 14,
+          "index": 3,
+          "pixels": 1840,
+          "palette_raw": "1AFE"
+        },
+        {
+          "bank": 14,
+          "index": 13,
+          "pixels": 1680,
+          "palette_raw": "0594"
+        },
+        {
+          "bank": 14,
+          "index": 2,
+          "pixels": 1654,
+          "palette_raw": "1F3F"
+        },
+        {
+          "bank": 14,
+          "index": 14,
+          "pixels": 926,
+          "palette_raw": "0572"
+        }
+      ]
     }
   },
-  "composite_rgb_sha256": "1d2b0de6172e2bc2ead3cfddb36049d5eec03ab231325fe252e153a7e334364c",
+  "ab_test": {
+    "description": "composite with first-target layer vs without it; half check in 15-bit domain: out_with == out_without >> 1 per 5-bit channel",
+    "diff_pixels": 13515,
+    "exact_half": 13515
+  },
+  "bg1_index_histogram": null,
+  "composite_rgb_sha256": "c6b3aacc77f36adbc08d52641a4c3b85e328761582ccd3c503d5785f506fd4db",
   "png_sha256": {
     "bg1": "43c43f6ae58325eec88aae1987362d100838973610cac1e74a0af6361277f5bd",
     "bg2": "73d1a8012f699c711de05493bbe543ddf230f4fd9059309dbb2c372869ed23c8",
     "bg3": "3de7270f4319643fae221e53eaa90e60d857435d54792d22efd548ee25abb429",
-    "composite": "a59a65ab34d8bbf5ea759a5f2e0bd299b082aa1abbfe7e48e31d08eea797e303"
+    "composite": "98d396a512ed0458d00a59a925083f11cb788a4cf611920e8e1266b3b26377bd"
   }
 }

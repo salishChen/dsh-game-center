@@ -45,6 +45,7 @@ def render_bg(n):
         raise NotImplementedError("only 256x256 text BG supported")
     mat = [[None] * 240 for _ in range(160)]
     tiles = set()
+    hist = {}
     for y in range(160):
         my = (y + vofs[n]) & 0xFF
         for x in range(240):
@@ -59,16 +60,18 @@ def render_bg(n):
             pbank = (ent >> 12) & 0xF
             if bpp8:
                 ci = vram[char_base + tile * 64 + py * 8 + px]
+                if ci == 0:
+                    continue
             else:
                 b = vram[char_base + tile * 32 + py * 4 + (px >> 1)]
-                ci = (b >> 4) if (px & 1) else (b & 0xF)
-                if ci:
-                    ci += pbank * 16
-            if ci == 0:
-                continue
+                raw = (b >> 4) if (px & 1) else (b & 0xF)
+                if raw == 0:  # 4bpp: index 0 is transparent in EVERY bank
+                    continue
+                ci = raw + pbank * 16
             tiles.add((tile, pbank))
+            hist[(pbank, raw)] = hist.get((pbank, raw), 0) + 1
             mat[y][x] = COLORS[ci]
-    return mat, sorted(tiles)
+    return mat, sorted(tiles), hist
 
 
 def png_rgb(path, rows):
@@ -85,12 +88,12 @@ def png_rgb(path, rows):
         f.write(chunk(b"IEND", b""))
 
 
-mats, tilesets = {}, {}
+mats, tilesets, hists = {}, {}, {}
 for n in range(4):
     if dispcnt & (1 << (8 + n)) and bgcnt[n]:
-        mats[n], tilesets[n] = render_bg(n)
+        mats[n], tilesets[n], hists[n] = render_bg(n)
     else:
-        mats[n], tilesets[n] = None, None
+        mats[n], tilesets[n], hists[n] = None, None, None
 
 prio = {n: bgcnt[n] & 3 for n in range(4) if mats[n] is not None}
 order = sorted(prio, key=lambda n: prio[n])
@@ -117,15 +120,31 @@ for n in mats:
             if px is not None:
                 opaque += 1
                 colors[px] = colors.get(px, 0) + 1
+    hist_items = list((hists[n] or {}).items())
     top = sorted(colors.items(), key=lambda kv: -kv[1])[:3]
+    banks = sorted({pb for _t, pb in tilesets[n]})
+    per_bank = {}
+    for c, k in colors.items():
+        b = (c & 0x1F)  # placeholder, replaced below
+    bank_counts = {}
+    for row in mat:
+        for px in row:
+            if px is not None:
+                bank_counts[px] = bank_counts.get(px, 0) + 1
     witness[str(n)] = {
         "state": "on",
         "blend_role": roles.get(n, "none"),
         "pixels_opaque": opaque,
         "distinct_colors": len(colors),
+        "palette_banks": banks,
+        "distinct_palette_banks": len(banks),
         "top_colors": [{"color": "%04X" % c, "count": k} for c, k in top],
         "tiles_used": len(tilesets[n]),
         "prio": prio[n],
+        "index_histogram": [
+            {"bank": pb, "index": idx, "pixels": k, "palette_raw": "%04X" % COLORS[pb * 16 + idx]}
+            for (pb, idx), k in sorted(hist_items, key=lambda kv: -kv[1])[:16]
+        ],
     }
 
 comp = [[None] * 240 for _ in range(160)]
@@ -140,9 +159,34 @@ for y in range(160):
         if effect == 1 and top_n in first_target:
             under = next((c for nn, c in stack[1:] if nn in second_target), None)
             if under is not None:
-                a, b = rgb555(top_c), rgb555(under)
-                top_c = ((a[0] * eva + b[0] * evb) >> 4) | (((a[1] * eva + b[1] * evb) >> 4) << 5) | (((a[2] * eva + b[2] * evb) >> 4) << 10)
+                out = 0
+                for sh in (0, 5, 10):
+                    v = (((top_c >> sh) & 0x1F) * eva + ((under >> sh) & 0x1F) * evb) >> 4
+                    out |= (31 if v > 31 else v) << sh
+                top_c = out
         comp[y][x] = top_c
+
+# A/B: composite without the first-target layers, against the real one (15-bit domain)
+comp_no_first = [[None] * 240 for _ in range(160)]
+for y in range(160):
+    for x in range(240):
+        stack = [(n, mats[n][y][x]) for n in order if mats[n][y][x] is not None and n not in first_target]
+        if not stack:
+            comp_no_first[y][x] = rgb555(COLORS[0])
+        else:
+            comp_no_first[y][x] = stack[0][1]
+ab_diff = ab_half = ab_nounder = 0
+for y in range(160):
+    for x in range(240):
+        wa = [[None] * 240 for _ in range(160)] if False else None
+for y in range(160):
+    for x in range(240):
+        a5 = comp[y][x]
+        b5 = comp_no_first[y][x]
+        if a5 != b5:
+            ab_diff += 1
+            if all((((a5 >> sh) & 0x1F) == (((b5 >> sh) & 0x1F) >> 1)) for sh in (0, 5, 10)):
+                ab_half += 1
 
 for n in order:
     rows = [[rgb555(px) if px is not None else (255, 0, 255) for px in row] for row in mats[n]]
@@ -166,7 +210,9 @@ summ = {
     "hofs": hofs,
     "vofs": vofs,
     "layers": witness,
-    "composite_rgb_sha256": hashlib.sha256(bytes(c for row in rowsp for px in row for c in px)).hexdigest(),
+    "ab_test": {"description": "composite with first-target layer vs without it; half check in 15-bit domain: out_with == out_without >> 1 per 5-bit channel", "diff_pixels": ab_diff, "exact_half": ab_half},
+ "bg1_index_histogram": {("%d" % r): {"pixels": k, "palette_raw": "%04X" % COLORS[(15 << 4) + r]} for (b, r), k in sorted(h1hist.items())} if False else None,
+ "composite_rgb_sha256": hashlib.sha256(bytes(c for row in rowsp for px in row for c in px)).hexdigest(),
     "png_sha256": {},
 }
 for n in order:
