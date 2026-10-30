@@ -33,7 +33,8 @@ const snap = {
   vram: new Uint8Array(gba.bus.vram),
   palette: new Uint8Array(gba.bus.palette),
 };
-gba.runFrame();
+// 关键：**不要**在这里多跑一帧。state 落在第 N-1 帧末，随后跑的那一帧才是第 N 帧；
+// 多跑一帧会让实验测到第 N+1 帧，而与帧 900 的产物比较就变成跨帧比较（这正是今天踩过的 lag-1）。
 const state = structuredClone(gba.serialize());
 
 // 半帧对照（修前的真实形态）：**只在第 0 行渲染前写一次**，之后不再强制。
@@ -50,9 +51,15 @@ gba.ppu.renderScanline = (line, bus) => {
   return original(line, bus);
 };
 
+const preFrame = process.argv.includes('--pre-frame');
 function legacyFrame(patch) {
   gba.deserialize(state);
-  oncePatch = patch;
+  oncePatch = preFrame ? null : patch;
+  if (preFrame && patch !== null) {
+    // 取法 A：跑帧前写一次（写入的是同一个 mmio 数组，PPU 直接读它）
+    gba.bus.mmioRegisters[0x50] = patch & 0xff;
+    gba.bus.mmioRegisters[0x51] = (patch >> 8) & 0xff;
+  }
   sampled = null;
   gba.runFrame();
   oncePatch = null;
@@ -88,7 +95,7 @@ const toGray = (m) => {
 
 mkdirSync(OUT, {recursive: true});
 const blindPng = toGray(blind);
-writeFileSync(join(OUT, 'frame900-blindzone-legacy.png'), blindPng);
+writeFileSync(join(OUT, `frame900-blindzone-legacy${preFrame ? '-preframe' : ''}.png`), blindPng);
 
 // 与修后的产物逐像素比（修后的盲区图由 mask-oracle.mjs 生成）
 const fixedPath = join(OUT, 'frame900-blindzone.png');
