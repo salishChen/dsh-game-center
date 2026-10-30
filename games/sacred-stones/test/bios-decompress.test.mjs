@@ -24,10 +24,15 @@ function lz77Stream({size, flags, body}) {
   return Uint8Array.from([0x10, size & 0xff, (size >> 8) & 0xff, (size >> 16) & 0xff, flags, ...body]);
 }
 
-test('formatOf 只看高 4 位，低 4 位是保留位', () => {
+test('formatOf：LZ77 严格等于 0x10，Huffman/RLE 按高 4 位', () => {
+  // LZ77 的低 4 位在规范里没有定义，0x1X 一律不认。
+  // 放宽度量过：纯扫描总数从 4,933 掉到 4,834（更早的位置被当流头吞掉后面的真头），
+  // 判据放宽反而结果变少 = 特异性不足。
   assert.equal(formatOf(Uint8Array.from([0x10])), FORMAT_LZ77);
-  assert.equal(formatOf(Uint8Array.from([0x1f])), FORMAT_LZ77);
-  assert.equal(formatOf(Uint8Array.from([0x20])), FORMAT_HUFFMAN);
+  assert.equal(formatOf(Uint8Array.from([0x1f])), null);
+  assert.equal(formatOf(Uint8Array.from([0x14])), null);
+  assert.equal(formatOf(Uint8Array.from([0x24])), FORMAT_HUFFMAN);
+  assert.equal(formatOf(Uint8Array.from([0x28])), FORMAT_HUFFMAN);
   assert.equal(formatOf(Uint8Array.from([0x30])), FORMAT_RLE);
   assert.equal(formatOf(Uint8Array.from([0x00])), null);
   assert.equal(formatOf(Uint8Array.from([0x40])), null);

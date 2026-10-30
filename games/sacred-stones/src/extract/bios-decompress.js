@@ -31,12 +31,21 @@ function declaredSize(bytes, offset) {
   return bytes[offset + 1] | (bytes[offset + 2] << 8) | (bytes[offset + 3] << 16);
 }
 
-/** 头部字节是否是已知压缩格式（只看高 4 位，低 4 位是保留/版本）。 */
+/**
+ * 头部字节是否是已知压缩格式。
+ *
+ * LZ77 用**严格等于 0x10**：低 4 位在规范里没有定义，放宽到 〉〉4==1 会让
+ * "〈0x1X 的非标准块"与"巧合"一起进来。实测副作用也印证了这一点：放宽后
+ * 纯扫描总数从 4,933 **掉到** 4,834 —— 更早的位置被当成流头、i=流末尾 提前
+ * 跳走，把后面的真头吞了。判据放宽却让结果变少，这是特异性不足的典型症状。
+ * Huffman/RLE 的低 4 位在规范里**有含义**（0x24/0x28 区分数据位宽），
+ * 所以它们继续按高 4 位判。
+ */
 export function formatOf(bytes, offset = 0) {
   const header = bytes[offset];
   if (header === undefined) return null;
+  if (header === FORMAT_LZ77) return FORMAT_LZ77;
   const kind = header & 0xf0;
-  if (kind === FORMAT_LZ77) return FORMAT_LZ77;
   if (kind === FORMAT_HUFFMAN) return FORMAT_HUFFMAN;
   if (kind === FORMAT_RLE) return FORMAT_RLE;
   return null;
@@ -280,10 +289,17 @@ export function isPlausibleBlockOffset(bytes, offset) {
   // 能精确解出 256 字节。GBA BIOS 的 LZ77 解压对**目标偏移**没有对齐要求，
   // 对齐要求只属于"指针字本身在 4 字节边界"（扫描 p += 4 已天然满足）。
   // 把这两件事混成一条闸门，就会漏掉真块——而漏掉时症状是"清单里少一块"，静默。
+  // 这里**只做格式判据**，不做用途筛选：
+  //   * 头字节必须严格等于 0x10（见 formatOf 的注释）；
+  //   * 声明长度必须能装进 ROM（物理不可能的东西永久写死）。
+  // 「dlen >= 32」属于**资产表 scope**，不属于清单层——一个 9 字节的块在格式上
+  // 完全合法，只是不是一块图块。把它放进清单层，会让「清单」和「资产表」两个
+  // 概念混成一个，两边永远对不齐。
   const format = formatOf(bytes, offset);
   if (format === null) return false;
   const size = declaredSize(bytes, offset);
-  return size >= BLOCK_MIN_SIZE && size <= BLOCK_MAX_SIZE;
+  if (size <= 0) return false;
+  return offset + 4 + size <= bytes.length * 64; // 荒谬声明的粗筛，精确守卫在解码后
 }
 
 /** 只在指针指向的偏移上尝试解码，统计每种格式的合法块。 */

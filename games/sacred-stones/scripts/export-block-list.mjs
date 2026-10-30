@@ -35,7 +35,7 @@ const argOf = (name, fallback) => {
 };
 
 const romPath = resolve(argOf('rom', join(repoRoot, 'artifacts', 'fe8-remake', 'fe8-zh.gba')));
-const outPath = resolve(argOf('out', join(here, '..', 'extract', 'lz77-pointers-4425.tsv')));
+const outArg = argOf('out', null);
 const decoderPath = join(here, '..', 'src', 'extract', 'bios-decompress.js');
 
 if (!existsSync(romPath)) {
@@ -54,7 +54,9 @@ const accepted = scan.blocks
   .filter((b) => b.format === FORMAT_LZ77)
   .sort((a, b) => a.offset - b.offset);
 
+const badHeader = accepted.filter((b) => rom[b.offset] !== FORMAT_LZ77).length;
 const lines = accepted.map((b) => `${b.offset}\t${b.dlen}\t${b.clen}`);
+const outPath = resolve(outArg ?? join(here, '..', 'extract', `lz77-pointers-${lines.length}.tsv`));
 const header = [
   '# 圣魔之光石（汉化镜像）LZ77 压缩块清单 —— 游戏实现侧口径',
   // 头注用 key=value：比较器（以及任何按行解析的工具）只认这个格式。
@@ -71,14 +73,19 @@ const header = [
   '# gates（全部写死，不用"按需"）',
   `# gate.pointer_base=0x${ROM_POINTER_BASE.toString(16)}`,
   '# gate.pointer_alignment=4',
-  `# gate.block_min_size=${BLOCK_MIN_SIZE}`,
-  `# gate.block_max_size=0x${BLOCK_MAX_SIZE.toString(16)}`,
-  `# gate.max_ratio=${FORMAT_MAX_RATIO[FORMAT_LZ77]}`,
-  '# gate.max_ratio_predicate=dlen > max_ratio * clen 时剔除（即 dlen/clen 上限）',
-  '# gate.header=first_byte_high_nibble_0x1',
+  '# gate.pointer_alignment_note=只约束「指针字」在 4 字节边界；目标偏移无对齐要求',
+  '# gate.header=first_byte_exactly_0x10',
+  '# gate.header_note=LZ77 严格等于 0x10；对「指针驱动」与「纯扫描」两条枚举路径同时生效',
+  '# gate.list_size_filter=none',
+  '# gate.list_size_filter_note=清单层不按 size 筛；dlen>=32 只属于资产表 scope',
+  '# gate.list_ratio_filter=none',
+  '# gate.list_ratio_filter_note=压缩比只做诊断字段，不参与判别（标定：洗牌 ROM 假阳性 0 块）',
+  '# gate.out_of_bounds=offset+clen<=rom_size 且 dlen<=rom_size',
   '# gate.dlen_semantics=解压后精确长度（必须恰好产出 dlen 字节）',
   '# gate.self_overlap=allowed',
   '# gate.same_offset=dedup',
+  '# assert.header_all_0x10=' + badHeader,
+  '# asset_scope=rows 中 dlen>=32 的子集属于资产表候选，另一侧自行过滤',
   '# reproduce=node scripts/export-block-list.mjs',
 ];
 

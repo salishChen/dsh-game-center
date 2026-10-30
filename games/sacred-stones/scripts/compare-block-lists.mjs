@@ -33,9 +33,12 @@ function parseList(path) {
   const header = [];
   let eolWarnings = 0;
   const lines = raw.split('\n');
+  let byteOffset = 0;
 
   lines.forEach((line, index) => {
     const lineNo = index + 1;
+    const lineByte = byteOffset;
+    byteOffset += Buffer.byteLength(line, 'utf8') + 1; // +1 = 换行符本身
     if (line === '') return;
     const crlf = line.endsWith('\r');
     const text = crlf ? line.slice(0, -1) : line;
@@ -47,26 +50,26 @@ function parseList(path) {
       return;
     }
     if (text.includes('#')) {
-      malformed.push({line: lineNo, reason: '`#` 出现在行中（注释必须在行首）', text});
+      malformed.push({line: lineNo, byte: lineByte, reason: '`#` 出现在行中（注释必须在行首）', text});
       return;
     }
     const parts = text.split('\t');
     if (parts.length !== 3) {
-      malformed.push({line: lineNo, reason: `列数 ${parts.length} 不是 3`, text});
+      malformed.push({line: lineNo, byte: lineByte, reason: `列数 ${parts.length} 不是 3`, text});
       return;
     }
     const [offset, dlen, clen] = parts.map((p) => Number(p));
     if (![offset, dlen, clen].every((n) => Number.isInteger(n))) {
-      malformed.push({line: lineNo, reason: '存在非整数字段', text});
+      malformed.push({line: lineNo, byte: lineByte, reason: '存在非整数字段', text});
       return;
     }
     if (offset < 0 || dlen <= 0 || clen <= 0) {
-      malformed.push({line: lineNo, reason: '字段越界（offset>=0, dlen>0, clen>0）', text});
+      malformed.push({line: lineNo, byte: lineByte, reason: '字段越界（offset>=0, dlen>0, clen>0）', text});
       return;
     }
     const prior = rows.get(offset);
     if (prior) {
-      malformed.push({line: lineNo, reason: `offset ${offset} 重复（首次在第 ${prior.line} 行）`, text});
+      malformed.push({line: lineNo, byte: lineByte, reason: `offset ${offset} 重复（首次在第 ${prior.line} 行）`, text});
       return;
     }
     rows.set(offset, {offset, dlen, clen, line: lineNo});
@@ -158,8 +161,16 @@ writeFileSync(
   join(outDir, 'field-mismatch.txt'),
   mismatch.map((m) => `${m.offset}\tA:${m.a.dlen},${m.a.clen}\tB:${m.b.dlen},${m.b.clen}`).join('\n') + (mismatch.length ? '\n' : ''),
 );
+// 打印**原始行文本与字节偏移**，不只打行号。
+// 只报"第 1 行字段名不对"，下一个人的第一反应是"我的导出器坏了"，
+// 而实际上坏的是格式（表头没加 `#` 就被当成数据行）。原文一眼看出是哪种错。
 const writeMalformed = (file, rows) =>
-  writeFileSync(join(outDir, file), rows.map((r) => `line ${r.line}\t${r.reason}\t${r.text}`).join('\n') + (rows.length ? '\n' : ''));
+  writeFileSync(
+    join(outDir, file),
+    rows
+      .map((r) => `line ${r.line} (byte ${r.byte})  ${JSON.stringify(r.text)}  ← ${r.reason}`)
+      .join('\n') + (rows.length ? '\n' : ''),
+  );
 writeMalformed('malformed-A.txt', listA.malformed);
 writeMalformed('malformed-B.txt', listB.malformed);
 
