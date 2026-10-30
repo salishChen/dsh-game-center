@@ -10,6 +10,8 @@
 //   * 索引 0 是透明，透出背景色（调色板 0 号色），不是画成黑色；
 //   * 图块地图条目：低 10 位图块号、bit10 水平翻转、bit11 垂直翻转、高 4 位调色板 bank。
 
+import {expand5, to5, write5To, blend5, blend8, parseBldcnt} from './color.js';
+
 const TILE = 8;
 const BYTES_PER_4BPP_TILE = 32;
 const BYTES_PER_8BPP_TILE = 64;
@@ -115,9 +117,9 @@ export function renderTextBg({vram, palette, bgcnt, hofs, vofs, width = 240, hei
       const r5 = bgr555 & 0x1f;
       const g5 = (bgr555 >> 5) & 0x1f;
       const b5 = (bgr555 >> 10) & 0x1f;
-      rgba[dst + 0] = (r5 << 3) | (r5 >> 2);
-      rgba[dst + 1] = (g5 << 3) | (g5 >> 2);
-      rgba[dst + 2] = (b5 << 3) | (b5 >> 2);
+      rgba[dst + 0] = expand5(r5);
+      rgba[dst + 1] = expand5(g5);
+      rgba[dst + 2] = expand5(b5);
       rgba[dst + 3] = 0xff;
     }
   }
@@ -131,7 +133,7 @@ export function backdropColor(palette) {
   const r5 = bgr555 & 0x1f;
   const g5 = (bgr555 >> 5) & 0x1f;
   const b5 = (bgr555 >> 10) & 0x1f;
-  return [(r5 << 3) | (r5 >> 2), (g5 << 3) | (g5 >> 2), (b5 << 3) | (b5 >> 2), 0xff];
+  return [expand5(r5), expand5(g5), expand5(b5), 0xff];
 }
 
 /** 把透明像素填成背景色，得到可以直接和 framebuffer 比的图。 */
@@ -146,4 +148,134 @@ export function flattenOnBackdrop(layer, palette, backdrop = backdropColor(palet
     }
   }
   return {width: layer.width, height: layer.height, rgba: out};
+}
+
+/**
+ * 多图层叠加：同一点上取 priority 数值最小的层；priority 相同时 BG 序号小的在上。
+ * 全透明处显示背景色。
+ * @param {{vram: Uint8Array, palette: Uint8Array, layers: Array<{bgcnt: number, hofs: number, vofs: number}>,
+ *          width?: number, height?: number}} input
+ */
+export function renderBgStack({vram, palette, layers, width = 240, height = 160}) {
+  const rendered = layers.map((layer) => ({
+    ...layer,
+    cfg: parseBgcnt(layer.bgcnt),
+    image: renderTextBg({vram, palette, bgcnt: layer.bgcnt, hofs: layer.hofs, vofs: layer.vofs, width, height}),
+  }));
+
+  // 排序：priority 小的先画在上层；同一 priority 按数组顺序（调用方按 BG 序号给）
+  const order = rendered
+    .map((layer, index) => ({layer, index}))
+    .sort((a, b) => (a.layer.cfg.priority - b.layer.cfg.priority) || (a.index - b.index));
+
+  const out = new Uint8Array(width * height * 4);
+  const backdrop = backdropColor(palette);
+  for (let i = 0; i < width * height; i += 1) {
+    const dst = i * 4;
+    let painted = false;
+    for (const {layer} of order) {
+      if (layer.image.rgba[dst + 3] === 0) continue;
+      out[dst + 0] = layer.image.rgba[dst + 0];
+      out[dst + 1] = layer.image.rgba[dst + 1];
+      out[dst + 2] = layer.image.rgba[dst + 2];
+      out[dst + 3] = 0xff;
+      painted = true;
+      break;
+    }
+    if (!painted) {
+      out[dst + 0] = backdrop[0];
+      out[dst + 1] = backdrop[1];
+      out[dst + 2] = backdrop[2];
+      out[dst + 3] = 0xff;
+    }
+  }
+  return {width, height, rgba: out};
+}
+
+/**
+ * 带颜色特效的叠加：在 **5 位域** 里算，最后只展开一次。
+ *
+ * 为什么必须回 5 位：硬件的混合是 `(a*b + c*(16-b)) >> 4` 这样的整数运算，
+ * 在 8 位展开值上做同样的运算会得到不同结果（低 3 位是重复信息，参与运算就污染了）。
+ */
+export function renderBgStackBlended({
+  vram,
+  palette,
+  layers,
+  bldcnt = 0,
+  bldalpha = 0,
+  bldy = 0,
+  width = 240,
+  height = 160,
+  // '5bit' = 真机口径（GBATEK：在 15 位域算）；'8bit' = @gba-kit 参照实现的口径。
+  // 发货用 5bit；跑 oracle 时用 8bit 才能和这个模拟器逐像素对上。
+  blendDomain = '5bit',
+}) {
+  const rendered = layers.map((layer, index) => ({
+    // 层的真实 BG 序号必须由调用方给：BLDCNT 的位是按 BG 序号编的，
+    // 用数组下标代替会让"这层是不是特效目标"判断到隔壁层上去。
+    index: layer.bgIndex ?? index,
+    cfg: parseBgcnt(layer.bgcnt),
+    image: renderTextBg({
+      vram,
+      palette,
+      bgcnt: layer.bgcnt,
+      hofs: layer.hofs,
+      vofs: layer.vofs,
+      width,
+      height,
+    }),
+  }));
+  const order = rendered.sort(
+    (a, b) => a.cfg.priority - b.cfg.priority || a.index - b.index,
+  );
+
+  const fx = parseBldcnt(bldcnt);
+  const eva = bldalpha & 0x1f;
+  const evb = (bldalpha >> 8) & 0x1f;
+  const backdrop = backdropColor(palette);
+  const backdrop5 = [to5(backdrop[0]), to5(backdrop[1]), to5(backdrop[2])];
+
+  const out = new Uint8Array(width * height * 4);
+  for (let i = 0; i < width * height; i += 1) {
+    const src = i * 4;
+    let top = null;
+    let topBg = -1;
+    for (const {index, image} of order) {
+      if (image.rgba[src + 3] === 0) continue;
+      top = [to5(image.rgba[src]), to5(image.rgba[src + 1]), to5(image.rgba[src + 2])];
+      topBg = index;
+      break;
+    }
+
+    let rgb5;
+    if (blendDomain === '8bit') {
+      // @gba-kit 的 5→8 展开是 `v << 3`（不复制高位），不是 (v<<3)|(v>>2)。
+      // 这一行必须跟着它走，否则亮度模式会差 1 个 5 位级——那 5,785 个红像素
+      // 不是我的公式错，是两套展开口径的差。
+      const top8 = top === null ? null : [top[0] << 3, top[1] << 3, top[2] << 3];
+      const back8 = [backdrop5[0] << 3, backdrop5[1] << 3, backdrop5[2] << 3];
+      const src8 = top8 ?? back8;
+      const shouldBlend = top === null
+        ? fx.targetBackdrop && fx.mode !== 0
+        : fx.targetsBg.includes(topBg) && fx.mode !== 0
+          && (fx.mode === 1 ? fx.secondTargetBackdrop : true);
+      const out8 = shouldBlend ? blend8(src8, back8, {mode: fx.mode, eva, evb, evy: bldy}) : src8;
+      write5To(out, src, [out8[0] >> 3, out8[1] >> 3, out8[2] >> 3], 0xff);
+      continue;
+    }
+    if (top === null) {
+      // 这一格是背景色。只有把 BD 列为第一目标时，特效才作用在它上面。
+      rgb5 = fx.targetBackdrop && fx.mode !== 0
+        ? blend5(backdrop5, backdrop5, {mode: fx.mode, eva, evb, evy: bldy})
+        : backdrop5;
+    } else if (fx.targetsBg.includes(topBg) && fx.mode !== 0 && fx.secondTargetBackdrop) {
+      // 第一目标命中、且第二目标里有 BD 才混：只有第一目标时硬件什么都不做。
+      rgb5 = blend5(top, backdrop5, {mode: fx.mode, eva, evb, evy: bldy});
+    } else {
+      rgb5 = top;
+    }
+    write5To(out, src, rgb5, 0xff);
+  }
+  return {width, height, rgba: out};
 }
