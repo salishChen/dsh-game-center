@@ -51,7 +51,7 @@ def main(tsv_path, out_path):
     for line in open(tsv_path, encoding="utf-8"):
         if line.startswith("#") or not line.strip():
             continue
-        off, dlen, clen = (int(x) for x in line.split()[:3])
+        off, dlen, clen = (int(x, 0) for x in line.split()[:3])
         rows.append((off, dlen, clen))
     cand = [(o, d, c) for o, d, c in rows if d >= 32]
     results = []
