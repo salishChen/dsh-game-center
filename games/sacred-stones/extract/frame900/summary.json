@@ -430,6 +430,13 @@
       ]
     }
   },
+  "blind_1": {
+    "file": "bg1-blindzone.png",
+    "pixels": 1049,
+    "sha256": "349a570cbf8dc86496697f2a5428f3fe3595422b0809559a3a96fb982fb01c3a",
+    "definition": "白=BG1 不透明且其下方首个第二目标颜色为 0x0000（黑压黑，framebuffer 对撞盲区；不是“无第二目标”）"
+  },
+  "under_black_pixels": 1049,
   "mask_1": {
     "file": "bg1-mask.png",
     "pixels": 14564,
@@ -442,7 +449,8 @@
     "exact_half": 13515,
     "layer1_opaque": 14564,
     "blended_pixels": 13515,
-    "no_under_pixels": 1049
+    "same_result_pixels": 1049,
+    "same_result_reason": "下方首个第二目标颜色为 0x0000，混合结果与不混合同值（不等于“无第二目标”）"
   },
   "bg1_index_histogram": null,
   "composite_rgb_sha256": "c6b3aacc77f36adbc08d52641a4c3b85e328761582ccd3c503d5785f506fd4db",

@@ -205,6 +205,24 @@ mask_rows = [[(255, 255, 255) if mats[1][y][x] is not None else (0, 0, 0) for x 
 mask_path = os.path.join(OUT, "bg1-mask.png")
 png_rgb(mask_path, mask_rows)
 mask_sha = hashlib.sha256(open(mask_path, "rb").read()).hexdigest()
+def under_color(y, x):
+    for n in order:
+        if n == 1 or n not in second_target:
+            continue
+        if mats[n][y][x] is not None:
+            return mats[n][y][x]
+    return None
+
+under_black = 0
+for y in range(160):
+    for x in range(240):
+        if mats[1][y][x] is not None and under_color(y, x) == 0:
+            under_black += 1
+assert under_black == witness["1"]["pixels_opaque"] - ab_diff, (under_black, witness["1"]["pixels_opaque"], ab_diff)
+blind_rows = [[(255, 255, 255) if (mats[1][y][x] is not None and under_color(y, x) == 0) else (0, 0, 0) for x in range(240)] for y in range(160)]
+blind_path = os.path.join(OUT, "bg1-blindzone.png")
+png_rgb(blind_path, blind_rows)
+blind_sha = hashlib.sha256(open(blind_path, "rb").read()).hexdigest()
 
 summ = {
     "frame": d["frame"],
@@ -229,8 +247,10 @@ summ = {
     "hofs": hofs,
     "vofs": vofs,
     "layers": witness,
+    "blind_1": {"file": "bg1-blindzone.png", "pixels": sum(1 for r in blind_rows for v in r if v == (255, 255, 255)), "sha256": blind_sha, "definition": "白=BG1 不透明且其下方首个第二目标颜色为 0x0000（黑压黑，framebuffer 对撞盲区；不是“无第二目标”）"},
+    "under_black_pixels": under_black,
     "mask_1": {"file": "bg1-mask.png", "pixels": witness["1"]["pixels_opaque"], "sha256": mask_sha, "definition": "白色=BG1 索引!=0（硬件意义下不透明），黑色=透明；用于与 oracle 的混合掩码对撞"},
-    "ab_test": {"description": "composite with first-target layer vs without it; half check in 15-bit domain: out_with == out_without >> 1 per 5-bit channel", "diff_pixels": ab_diff, "exact_half": ab_half, "layer1_opaque": witness["1"]["pixels_opaque"], "blended_pixels": ab_diff, "no_under_pixels": witness["1"]["pixels_opaque"] - ab_diff},
+    "ab_test": {"description": "composite with first-target layer vs without it; half check in 15-bit domain: out_with == out_without >> 1 per 5-bit channel", "diff_pixels": ab_diff, "exact_half": ab_half, "layer1_opaque": witness["1"]["pixels_opaque"], "blended_pixels": ab_diff, "same_result_pixels": witness["1"]["pixels_opaque"] - ab_diff, "same_result_reason": "下方首个第二目标颜色为 0x0000，混合结果与不混合同值（不等于“无第二目标”）"},
  "bg1_index_histogram": {("%d" % r): {"pixels": k, "palette_raw": "%04X" % COLORS[(15 << 4) + r]} for (b, r), k in sorted(h1hist.items())} if False else None,
  "composite_rgb_sha256": hashlib.sha256(bytes(c for row in rowsp for px in row for c in px)).hexdigest(),
     "png_sha256": {},
