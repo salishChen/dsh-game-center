@@ -1,7 +1,7 @@
 {
   "frame": 900,
   "source": "extract/frame900.json",
-  "source_vram_sha256": "94a525d6c1a92a170f0c55fcba6d1bc776fa3b5b768b4438c795afd1298ba98d",
+  "source_vram_sha256": "73025edad92f1ad299a610dfb8884587a51215599ec18dbf999b879ac4f4bade",
   "source_palette_sha256": "568906629d7f5075ffb75b620acc2c244c6f03a6a5f1c2829b4f7021b4d56cfe",
   "dispcnt": "0x1E40",
   "bldcnt_raw": "0x0C42",
@@ -30,8 +30,8 @@
   "evb": 8,
   "hofs": [
     0,
-    169,
-    3,
+    156,
+    6,
     0
   ],
   "vofs": [
@@ -48,7 +48,7 @@
     "1": {
       "state": "on",
       "blend_role": "first",
-      "pixels_opaque": 14564,
+      "pixels_opaque": 12574,
       "distinct_colors": 1,
       "palette_banks": [
         15
@@ -61,100 +61,100 @@
       "top_colors": [
         {
           "color": "0000",
-          "count": 14564
+          "count": 12574
         }
       ],
-      "tiles_used": 274,
+      "tiles_used": 235,
       "prio": 1,
       "index_histogram": [
         {
           "bank": 15,
           "index": 13,
-          "pixels": 1685,
+          "pixels": 1417,
           "palette_raw": "0000"
         },
         {
           "bank": 15,
           "index": 2,
-          "pixels": 1604,
+          "pixels": 1405,
           "palette_raw": "0000"
         },
         {
           "bank": 15,
           "index": 11,
-          "pixels": 1500,
+          "pixels": 1371,
           "palette_raw": "0000"
         },
         {
           "bank": 15,
           "index": 8,
-          "pixels": 1338,
+          "pixels": 1234,
           "palette_raw": "0000"
         },
         {
           "bank": 15,
           "index": 12,
-          "pixels": 1308,
+          "pixels": 1107,
           "palette_raw": "0000"
         },
         {
           "bank": 15,
           "index": 15,
-          "pixels": 1086,
+          "pixels": 981,
           "palette_raw": "0000"
         },
         {
           "bank": 15,
           "index": 6,
-          "pixels": 969,
+          "pixels": 834,
           "palette_raw": "0000"
         },
         {
           "bank": 15,
           "index": 4,
-          "pixels": 966,
+          "pixels": 743,
           "palette_raw": "0000"
         },
         {
           "bank": 15,
           "index": 10,
-          "pixels": 808,
+          "pixels": 705,
           "palette_raw": "0000"
         },
         {
           "bank": 15,
           "index": 7,
-          "pixels": 772,
+          "pixels": 662,
           "palette_raw": "0000"
         },
         {
           "bank": 15,
           "index": 14,
-          "pixels": 698,
+          "pixels": 618,
           "palette_raw": "0000"
         },
         {
           "bank": 15,
           "index": 5,
-          "pixels": 613,
+          "pixels": 515,
           "palette_raw": "0000"
         },
         {
           "bank": 15,
           "index": 3,
-          "pixels": 590,
+          "pixels": 489,
           "palette_raw": "0000"
         },
         {
           "bank": 15,
           "index": 9,
-          "pixels": 570,
+          "pixels": 443,
           "palette_raw": "0000"
         },
         {
           "bank": 15,
           "index": 1,
-          "pixels": 57,
+          "pixels": 50,
           "palette_raw": "0000"
         }
       ]
@@ -162,7 +162,7 @@
     "2": {
       "state": "on",
       "blend_role": "second",
-      "pixels_opaque": 6241,
+      "pixels_opaque": 6237,
       "distinct_colors": 78,
       "palette_banks": [
         0,
@@ -199,7 +199,7 @@
         },
         {
           "color": "2A9A",
-          "count": 716
+          "count": 712
         },
         {
           "color": "1593",
@@ -224,7 +224,7 @@
         {
           "bank": 7,
           "index": 5,
-          "pixels": 440,
+          "pixels": 436,
           "palette_raw": "2A9A"
         },
         {
@@ -432,32 +432,36 @@
   },
   "blind_1": {
     "file": "bg1-blindzone.png",
-    "pixels": 1049,
-    "sha256": "349a570cbf8dc86496697f2a5428f3fe3595422b0809559a3a96fb982fb01c3a",
-    "definition": "白=BG1 不透明且其下方首个第二目标颜色为 0x0000（黑压黑，framebuffer 对撞盲区；不是“无第二目标”）"
+    "pixels": 931,
+    "sha256": "3a065e3d48e1529843d729d778cf055fe66242d3f33ae91cf14a4cad48e81b62",
+    "definition": "白=混合输出与不混合输出同值的像素（不可判区，由参照侧独立算出）",
+    "assumption": "reference-side: frame900.json (sha256 c1fdc400..., vram 73025eda...) registers = frame 900 (dump taken AFTER last runFrame, per game impl 0169d4f); blind = pixels where composite-with-first-target == composite-without-first-target in 15-bit domain",
+    "computedBy": "reference-side",
+    "source_frame900_sha256": "c1fdc4000e12ab203271b4ce20d85894ba32a56370eadc42ae291747e4a2b712"
   },
-  "under_black_pixels": 1049,
+  "under_black_pixels": 931,
+  "verification_status": "recomputed against new dump (registers = frame 900, dump after last runFrame); source frame900.json sha256 in blind_1.source_frame900_sha256",
   "mask_1": {
     "file": "bg1-mask.png",
-    "pixels": 14564,
-    "sha256": "e05ab9517808f6695a899f143d8726790115c6c43ae17e7f233b7ef3b380c114",
+    "pixels": 12574,
+    "sha256": "1d42a47a301e67326462e0f98bb74f2a0c237694cee9198bd09187feabbaf4d0",
     "definition": "白色=BG1 索引!=0（硬件意义下不透明），黑色=透明；用于与 oracle 的混合掩码对撞"
   },
   "ab_test": {
     "description": "composite with first-target layer vs without it; half check in 15-bit domain: out_with == out_without >> 1 per 5-bit channel",
-    "diff_pixels": 13515,
-    "exact_half": 13515,
-    "layer1_opaque": 14564,
-    "blended_pixels": 13515,
-    "same_result_pixels": 1049,
+    "diff_pixels": 11643,
+    "exact_half": 11643,
+    "layer1_opaque": 12574,
+    "blended_pixels": 11643,
+    "same_result_pixels": 931,
     "same_result_reason": "下方首个第二目标颜色为 0x0000，混合结果与不混合同值（不等于“无第二目标”）"
   },
   "bg1_index_histogram": null,
-  "composite_rgb_sha256": "c6b3aacc77f36adbc08d52641a4c3b85e328761582ccd3c503d5785f506fd4db",
+  "composite_rgb_sha256": "12f38f96169a19d66d34e921b70627f18876a967a8034ca37ca55b9f22c352ef",
   "png_sha256": {
-    "bg1": "43c43f6ae58325eec88aae1987362d100838973610cac1e74a0af6361277f5bd",
-    "bg2": "73d1a8012f699c711de05493bbe543ddf230f4fd9059309dbb2c372869ed23c8",
+    "bg1": "bd36effa8110ca247d68991ca8db89afae075979e6d9d3df88fb97edf98b223d",
+    "bg2": "aaa869a8bfec0861a76116ac2b6d6a55bd165d33476a0fcedb398dc37bdd77eb",
     "bg3": "3de7270f4319643fae221e53eaa90e60d857435d54792d22efd548ee25abb429",
-    "composite": "98d396a512ed0458d00a59a925083f11cb788a4cf611920e8e1266b3b26377bd"
+    "composite": "ce157ffc058d14253a3329e17e34dc72e0e13a83c74848900ead07c3324a243f"
   }
 }

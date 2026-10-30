@@ -222,9 +222,10 @@ for y in range(160):
 under_black = len(under_black_set)
 # 独立路径 B：逐像素比较"混合后输出"与"不混合输出"的值，相等者入集
 same_result_set = set()
+BLIND_ASSUMPTION = "reference-side: frame900.json (sha256 c1fdc400..., vram 73025eda...) registers = frame 900 (dump taken AFTER last runFrame, per game impl 0169d4f); blind = pixels where composite-with-first-target == composite-without-first-target in 15-bit domain"
 for y in range(160):
     for x in range(240):
-        if comp[y][x] == comp_no_first[y][x]:
+        if mats[1][y][x] is not None and comp[y][x] == comp_no_first[y][x]:
             same_result_set.add((y, x))
 assert under_black_set == same_result_set, (len(under_black_set), len(same_result_set))
 assert under_black == witness["1"]["pixels_opaque"] - ab_diff, (under_black, witness["1"]["pixels_opaque"], ab_diff)
@@ -256,9 +257,9 @@ summ = {
     "hofs": hofs,
     "vofs": vofs,
     "layers": witness,
-    "blind_1": {"file": "bg1-blindzone.png", "pixels": sum(1 for r in blind_rows for v in r if v == (255, 255, 255)), "sha256": blind_sha, "definition": "白=BG1 不透明且其下方首个第二目标颜色为 0x0000（黑压黑，framebuffer 对撞盲区；不是“无第二目标”）"},
+    "blind_1": {"file": "bg1-blindzone.png", "pixels": sum(1 for r in blind_rows for v in r if v == (255, 255, 255)), "sha256": blind_sha, "definition": "白=混合输出与不混合输出同值的像素（不可判区，由参照侧独立算出）", "assumption": BLIND_ASSUMPTION, "computedBy": "reference-side", "source_frame900_sha256": hashlib.sha256(open(os.path.join(os.path.dirname(OUT), "frame900.json"), "rb").read()).hexdigest()},
     "under_black_pixels": under_black,
-    "verification_status": "pending: dump 寄存器时序未确认（游戏实现 需回答快照在最后一次 runFrame 之前还是之后）前，本页派生数字与掩码不得作验收基线",
+    "verification_status": "recomputed against new dump (registers = frame 900, dump after last runFrame); source frame900.json sha256 in blind_1.source_frame900_sha256",
     "mask_1": {"file": "bg1-mask.png", "pixels": witness["1"]["pixels_opaque"], "sha256": mask_sha, "definition": "白色=BG1 索引!=0（硬件意义下不透明），黑色=透明；用于与 oracle 的混合掩码对撞"},
     "ab_test": {"description": "composite with first-target layer vs without it; half check in 15-bit domain: out_with == out_without >> 1 per 5-bit channel", "diff_pixels": ab_diff, "exact_half": ab_half, "layer1_opaque": witness["1"]["pixels_opaque"], "blended_pixels": ab_diff, "same_result_pixels": witness["1"]["pixels_opaque"] - ab_diff, "same_result_reason": "下方首个第二目标颜色为 0x0000，混合结果与不混合同值（不等于“无第二目标”）"},
  "bg1_index_histogram": {("%d" % r): {"pixels": k, "palette_raw": "%04X" % COLORS[(15 << 4) + r]} for (b, r), k in sorted(h1hist.items())} if False else None,
