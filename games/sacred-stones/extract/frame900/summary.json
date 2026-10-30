@@ -431,6 +431,14 @@
     }
   },
   "blind_1": {
+    "mask_convention": {
+      "width": 240,
+      "height": 160,
+      "row_major": true,
+      "bit_source": "same-result",
+      "msb_first": true,
+      "pad": "row-pad-to-byte"
+    },
     "file": "bg1-blindzone.png",
     "pixels": 931,
     "sha256": "3a065e3d48e1529843d729d778cf055fe66242d3f33ae91cf14a4cad48e81b62",
@@ -442,6 +450,14 @@
   "under_black_pixels": 931,
   "verification_status": "recomputed against new dump (registers = frame 900, dump after last runFrame); source frame900.json sha256 in blind_1.source_frame900_sha256",
   "mask_1": {
+    "mask_convention": {
+      "width": 240,
+      "height": 160,
+      "row_major": true,
+      "bit_source": "bg1-opaque",
+      "msb_first": true,
+      "pad": "row-pad-to-byte"
+    },
     "file": "bg1-mask.png",
     "pixels": 12574,
     "sha256": "1d42a47a301e67326462e0f98bb74f2a0c237694cee9198bd09187feabbaf4d0",
