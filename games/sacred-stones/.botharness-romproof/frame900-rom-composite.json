@@ -1,0 +1,25 @@
+{
+  "frames": 900,
+  "rom_sha256": "167ed57921c24f841108f46eabc33cb10e10f141b09d0fa6e75b5c5add3e4df0",
+  "blocksDecoded": 4454,
+  "tiles": {
+    "total": 3072,
+    "locatedInRom": 745,
+    "locatedInCompressedBlocks": 745,
+    "locatedInRawRom": 0,
+    "missing": 2327,
+    "missingSamples": [
+      "0x0",
+      "0x20",
+      "0x40",
+      "0x60",
+      "0xe0"
+    ]
+  },
+  "note": "未定位的图块在重建时留 0，不用 dump 字节顶替；缺口直接表现为画面差异。",
+  "diff": {
+    "diffPixels": 34560,
+    "total": 38400,
+    "maxChannelDelta": 248
+  }
+}

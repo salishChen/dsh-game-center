@@ -37,8 +37,9 @@ const scan = scanPointedBlocks(rom, {offsets: collectRomPointers(rom)});
 const blocks = [];
 for (const block of scan.blocks) {
   if (block.dlen < MIN_DLEN) continue;
-  const plain = lz77Decompress(rom, block.offset);
-  if (!plain) continue;
+  const decoded = lz77Decompress(rom, block.offset);
+  if (!decoded || !decoded.output) continue;
+  const plain = decoded.output;
   blocks.push({offset: block.offset, dlen: plain.length, clen: block.clen, plain});
 }
 
