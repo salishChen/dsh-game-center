@@ -172,3 +172,171 @@ test('A1-10: 包含 pull_request 字段的 GitHub 载荷必须排除，不作为
     assert.match(result.reason, /排除 Pull Request 记录/)
   }
 })
+
+test('A1-11: 正文"游戏地址"与机器块 source.repository 规范化后一致性校验', () => {
+  // 正向：规范化后一致
+  const validBody = `
+- **游戏地址 / Game repository URL**（必填 / required）：\`https://github.com/example/minesweeper.git\`
+
+\`\`\`gamecenter-json
+${JSON.stringify(VALID_ENTRY, null, 2)}
+\`\`\`
+`
+  const okRes = parseGitHubIssuePayload({ number: 1, body: validBody }, { owner: 'catalog', repo: 'warehouse' })
+  assert.equal(okRes.ok, true)
+
+  // 负向：不一致（仓库被篡改）
+  const mismatchBody = `
+- **游戏地址 / Game repository URL**（必填 / required）：\`https://github.com/attacker/evil.git\`
+
+\`\`\`gamecenter-json
+${JSON.stringify(VALID_ENTRY, null, 2)}
+\`\`\`
+`
+  const mismatchRes = parseGitHubIssuePayload({ number: 1, body: mismatchBody }, { owner: 'catalog', repo: 'warehouse' })
+  assert.equal(mismatchRes.ok, false)
+  if (!mismatchRes.ok) {
+    assert.equal(mismatchRes.code, 'PROTOCOL_INVALID')
+    assert.match(mismatchRes.reason, /正文游戏地址与机器块 source.repository 规范化后不一致/)
+  }
+
+  // 负向：正文游戏地址带凭据或非法格式
+  const badUrlBody = `
+- **游戏地址 / Game repository URL**（必填 / required）：\`https://user:pass@github.com/example/minesweeper.git\`
+
+\`\`\`gamecenter-json
+${JSON.stringify(VALID_ENTRY, null, 2)}
+\`\`\`
+`
+  const badUrlRes = parseGitHubIssuePayload({ number: 1, body: badUrlBody }, { owner: 'catalog', repo: 'warehouse' })
+  assert.equal(badUrlRes.ok, false)
+  if (!badUrlRes.ok) {
+    assert.equal(badUrlRes.code, 'PROTOCOL_INVALID')
+    assert.match(badUrlRes.reason, /正文游戏地址格式不合法/)
+  }
+})
+
+test('A1-12: 展示元数据校验与 Markdown 危险构造拦截', () => {
+  const baseEntryWithDisplay = (displayOverrides = {}) => ({
+    ...VALID_ENTRY,
+    display: {
+      schemaVersion: 1,
+      summary: '有效纯文本简介',
+      descriptionMarkdown: '## 玩法\n- 正常 markdown 文本',
+      cover: {
+        url: 'https://user-images.githubusercontent.com/1/cover.png',
+        sha256: 'sha256:' + 'a'.repeat(64),
+        mime: 'image/png',
+        width: 1280,
+        height: 720,
+        alt: '封面图',
+      },
+      screenshots: [],
+      compatibility: {
+        gameCenter: '>=1.0.0 <2.0.0',
+        dsh: '>=0.2.1-rc.2 <0.3.0',
+      },
+      ...displayOverrides,
+    },
+  })
+
+  // 正向：合法展示元数据
+  const okPayload = {
+    number: 1,
+    body: `\`\`\`gamecenter-json\n${JSON.stringify(baseEntryWithDisplay(), null, 2)}\n\`\`\``,
+  }
+  const okRes = parseGitHubIssuePayload(okPayload, { owner: 'catalog', repo: 'warehouse' })
+  assert.equal(okRes.ok, true)
+
+  // 负向：Markdown 包含 raw HTML (如 <img> 或 <b>)
+  const htmlEntry = baseEntryWithDisplay({
+    descriptionMarkdown: '## 介绍\n<img src="https://evil.com/x.png">',
+  })
+  const htmlRes = parseGitHubIssuePayload(
+    { number: 1, body: `\`\`\`gamecenter-json\n${JSON.stringify(htmlEntry, null, 2)}\n\`\`\`` },
+    { owner: 'catalog', repo: 'warehouse' },
+  )
+  assert.equal(htmlRes.ok, false)
+  if (!htmlRes.ok) {
+    assert.equal(htmlRes.code, 'PROTOCOL_INVALID')
+    assert.match(htmlRes.reason, /简介含禁用构造：raw-html/)
+  }
+
+  // 负向：Markdown 包含 Markdown 图片语法
+  const mdImgEntry = baseEntryWithDisplay({
+    descriptionMarkdown: '## 介绍\n![图片](https://user-images.githubusercontent.com/1/a.png)',
+  })
+  const mdImgRes = parseGitHubIssuePayload(
+    { number: 1, body: `\`\`\`gamecenter-json\n${JSON.stringify(mdImgEntry, null, 2)}\n\`\`\`` },
+    { owner: 'catalog', repo: 'warehouse' },
+  )
+  assert.equal(mdImgRes.ok, false)
+  if (!mdImgRes.ok) {
+    assert.equal(mdImgRes.code, 'PROTOCOL_INVALID')
+    assert.match(mdImgRes.reason, /简介含禁用构造：markdown-image/)
+  }
+
+  // 负向：Markdown 包含危险协议
+  const jsEntry = baseEntryWithDisplay({
+    descriptionMarkdown: '## 介绍\n[恶意链接](javascript:alert(1))',
+  })
+  const jsRes = parseGitHubIssuePayload(
+    { number: 1, body: `\`\`\`gamecenter-json\n${JSON.stringify(jsEntry, null, 2)}\n\`\`\`` },
+    { owner: 'catalog', repo: 'warehouse' },
+  )
+  assert.equal(jsRes.ok, false)
+  if (!jsRes.ok) {
+    assert.equal(jsRes.code, 'PROTOCOL_INVALID')
+    assert.match(jsRes.reason, /简介含禁用构造：unsafe-scheme/)
+  }
+
+  // 负向：SVG 格式被拒
+  const svgEntry = baseEntryWithDisplay({
+    cover: {
+      url: 'https://user-images.githubusercontent.com/1/cover.png',
+      sha256: 'sha256:' + 'a'.repeat(64),
+      mime: 'image/svg+xml',
+      width: 1280,
+      height: 720,
+      alt: 'SVG 封面',
+    },
+  })
+  const svgRes = parseGitHubIssuePayload(
+    { number: 1, body: `\`\`\`gamecenter-json\n${JSON.stringify(svgEntry, null, 2)}\n\`\`\`` },
+    { owner: 'catalog', repo: 'warehouse' },
+  )
+  assert.equal(svgRes.ok, false)
+  if (!svgRes.ok) {
+    assert.equal(svgRes.code, 'PROTOCOL_INVALID')
+    assert.match(svgRes.reason, /只允许 png\/jpeg\/webp\/gif（禁止 SVG）/)
+  }
+})
+
+test('A1-13: 目录仓真实模板与草稿负向测试（TO_BE_GENERATED 占位必须被拒绝）', async () => {
+  const fs = await import('node:fs/promises')
+
+  const templatePath = 'C:/Users/salis/Desktop/warehouse/dsh-game-center-warehouse/.github/ISSUE_TEMPLATE/dsh-gamecenter-listing.md'
+  const draftPath = 'C:/Users/salis/Desktop/warehouse/dsh-game-center-warehouse/game-issues/drafts/2026-10-20-minesweeping-listing-draft.md'
+
+  const templateContent = await fs.readFile(templatePath, 'utf-8')
+  const templateResult = parseGitHubIssuePayload(
+    { number: 100, body: templateContent },
+    { owner: 'salishChen', repo: 'dsh-game-center-warehouse' },
+  )
+  assert.equal(templateResult.ok, false, '上架模板因包含占位标记必须被拒绝')
+  if (!templateResult.ok) {
+    assert.equal(templateResult.code, 'PROTOCOL_INVALID')
+    assert.match(templateResult.reason, /(?:repository 必须是|commit 必须是 40 位小写十六进制)/)
+  }
+
+  const draftContent = await fs.readFile(draftPath, 'utf-8')
+  const draftResult = parseGitHubIssuePayload(
+    { number: 101, body: draftContent },
+    { owner: 'salishChen', repo: 'dsh-game-center-warehouse' },
+  )
+  assert.equal(draftResult.ok, false, '扫雷草稿因包含 TO_BE_GENERATED 占位必须被拒绝')
+  if (!draftResult.ok) {
+    assert.equal(draftResult.code, 'PROTOCOL_INVALID')
+    assert.match(draftResult.reason, /commit 必须是 40 位小写十六进制/)
+  }
+})

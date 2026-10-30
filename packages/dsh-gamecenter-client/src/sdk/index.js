@@ -7,7 +7,7 @@
  * 2. 仅暴露白名单能力：ai.generate/ai.cancel、save.checkpoint、lifecycle、clock、random、assets。
  * 3. 绝不暴露任何 DSH 宿主对象：无 Cordis ctx、无主 DOM、无通用 RPC、无文件系统/API key/Git token。
  * 4. 严禁向游戏端下发任何运行时控制凭据（runtimeToken），游戏对底层鉴权完全无感。
- * 5. 本阶段 ai.generate 禁止发起真实模型调用（由 Bridge 返回确定性 fixture 结果）。
+ * 5. ai.generate 仅经受控 Bridge，由 Host 根据玩家绑定执行真实模型调用。
  */
 
 import { createSeededRandom } from './random.js';
@@ -25,8 +25,7 @@ import { createGameClock } from './clock.js';
  * @property {string} slot
  * @property {string} [operation]
  * @property {string} operationId 幂等操作 ID
- * @property {GameMessage[]} messages
- * @property {Record<string, unknown>} [responseSchema]
+ * @property {Record<string, unknown>} input slot 的结构化输入
  */
 
 /**
@@ -146,6 +145,27 @@ export function createGameCenterSDK(options) {
     }
 
     // 2. 处理宿主主动下发的生命周期指令（例如要求暂停或恢复）
+    if (data.type === 'lifecycle:control') {
+      const action = data.action;
+      if (action !== 'suspend' && action !== 'resume') return;
+      (async function() {
+        try {
+          let controlSnapshot;
+          if (action === 'suspend') {
+            clock.pause();
+            if (lifecycleHooks && typeof lifecycleHooks.pause === 'function') controlSnapshot = await lifecycleHooks.pause();
+          } else {
+            if (lifecycleHooks && typeof lifecycleHooks.resume === 'function') await lifecycleHooks.resume();
+            clock.resume();
+          }
+          port.postMessage({bridgeVersion:1, requestId:'ack-' + data.controlId, method:'lifecycle.controlAck', payload:{controlId:data.controlId, generation:data.generation, ok:true,...(controlSnapshot === undefined ? {} : {snapshot:controlSnapshot})}});
+        } catch (error) {
+          port.postMessage({bridgeVersion:1, requestId:'ack-' + data.controlId, method:'lifecycle.controlAck', payload:{controlId:data.controlId, generation:data.generation, ok:false, message:String(error)}});
+        }
+      })();
+      return;
+    }
+
     if (data.type === 'lifecycle:pause') {
       clock.pause();
       const generation = Number(data.generation) || 0;
@@ -222,9 +242,17 @@ export function createGameCenterSDK(options) {
   }
 
   const sdkApi = {
+    wallet: {
+      /** @param {{action:string;operationId?:string;expectedRevision?:number;amount?:number;state?:any}} input */
+      command(input) { return sendRequest('wallet.command',input); },
+    },
+    game: {
+      /** @param {{action:string; operationId:string; expectedRevision?:number; bid?:number; cards?:number[]; mode?:'adventure'|'duel'; phase?:string}} input */
+      command(input) { return sendRequest('game.command', input); },
+    },
     ai: {
       /**
-       * 请求 AI 生成（阶段1返回 fixture 数据，禁止真实付费调用）。
+       * 通过当前实例的 AI slot 请求所选模型。
        * @param {AiGenerateRequest} request
        * @returns {Promise<any>}
        */

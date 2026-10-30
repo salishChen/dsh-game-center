@@ -22,6 +22,7 @@ import {
   bundleContentBytes,
   validateGameBundleFiles,
   validateCatalogInstallRequest,
+  validateCatalogUninstallRequest,
   validateSaveLatestRequest,
   validateSaveCheckpointRequest,
   validatePreviewBundleRequest,
@@ -30,9 +31,12 @@ import {
   PAUSE_FINALIZATION_ORDER,
   decideCheckpointAdmission,
   isPauseFinalizationOrderValid,
+  MEDIA_MAX_BYTES,
+  MEDIA_ALLOWED_MIMES,
+  validateMediaFetchRequest,
 } from '../dist/wiring.js'
 
-import { SAVE_SLOTS, isSaveIdShapeValid } from '../dist/bridge.js'
+import { SAVE_SLOTS, isSaveIdShapeValid, HOST_PUSH_EVENTS, THEME_MODES, validateThemePushPayload, validateHostPushEnvelope } from '../dist/bridge.js'
 import {
   LEASE_ACK_WINDOW_MS,
   LEASE_RECLAIM_REASONS,
@@ -52,9 +56,12 @@ test('W-01 方法表：既有 5 条保留，新增恰为 7 条且无重复', () 
   const added = GAMECENTER_REMOTE_METHODS.filter((method) => !legacy.includes(method))
   assert.deepEqual([...added], [...GAMECENTER_REMOTE_METHOD_ADDITIONS], '新增方法与常量表必须一致')
   assert.equal(new Set(GAMECENTER_REMOTE_METHODS).size, GAMECENTER_REMOTE_METHODS.length, '方法表不得有重复项')
-  // 数量不是仪式性的"12"：2026-10-20 为关闭孤儿 running 租约新增 abandonRuntime，现为 13。
-  assert.equal(GAMECENTER_REMOTE_METHODS.length, 13, '阶段1 收尾后应为 13 条（12 + abandonRuntime）')
+  // 数量不是仪式性的"12"：2026-10-20 为关闭孤儿 running 租约新增 abandonRuntime（13），
+  // 为受控媒体拉取新增 mediaFetch（14）。
+  assert.equal(GAMECENTER_REMOTE_METHODS.length, 24, '包含模型绑定、暂停、Host 权威牌局命令与卸载')
   assert.ok(GAMECENTER_REMOTE_METHODS.includes('abandonRuntime'), 'abandonRuntime 必须冻结进方法表')
+  assert.ok(GAMECENTER_REMOTE_METHODS.includes('mediaFetch'), 'mediaFetch（Host 受控媒体拉取）必须冻结进方法表')
+  assert.ok(GAMECENTER_REMOTE_METHODS.includes('catalogUninstall'), 'catalogUninstall 必须冻结进方法表')
 })
 
 test('W-02 iframe 安全策略：只有 allow-scripts，且 CSP 断网', () => {
@@ -297,6 +304,7 @@ test('W-19 本地预览：标签固定声明未上架，且与安装路径分离
   assert.equal(GAMECENTER_REMOTE_METHODS.includes('previewBundle'), true)
   // 预览与安装是两条独立方法：预览不得走 catalogInstall。
   assert.equal(GAMECENTER_REMOTE_METHODS.includes('catalogInstall'), true)
+  assert.equal(GAMECENTER_REMOTE_METHODS.includes('catalogUninstall'), true)
 })
 // ---------------------------------------------------------------------------
 // 暂停收尾：最终检查点先落盘再封存（PM 2026-10-20 明确要求）
@@ -466,4 +474,51 @@ test('W-33 Host 不得用"玩家静止"当回收依据（源码回归守卫）',
     /lastActivityMs|lastActiveAt|idleSince/,
     'Host 不得引入"最后活动时间"驱动的回收（会把正常静置的玩家误杀）',
   )
+})
+
+test('W-34 主题推送事件与受控媒体契约（最小冻结）', () => {
+  // 主题推送：只有 theme 一个事件，模式只允许 light/dark，来源只允许 dsh/os
+  assert.deepEqual([...HOST_PUSH_EVENTS], ['theme'])
+  assert.deepEqual([...THEME_MODES], ['light', 'dark'])
+  assert.equal(validateThemePushPayload({ mode: 'dark', source: 'dsh' }), true)
+  assert.equal(validateThemePushPayload({ mode: 'light', source: 'os' }), true)
+  assert.equal(validateThemePushPayload({ mode: 'blue', source: 'dsh' }), false)
+  assert.equal(validateThemePushPayload({ mode: 'dark', source: 'game' }), false)
+  assert.equal(
+    validateHostPushEnvelope({ kind: 'host.push', event: 'theme', seq: 1, payload: { mode: 'dark', source: 'dsh' } }),
+    true,
+  )
+  assert.equal(validateHostPushEnvelope({ kind: 'host.push', event: 'theme', seq: 'x', payload: { mode: 'dark', source: 'dsh' } }), false)
+  assert.equal(validateHostPushEnvelope({ kind: 'host.push', event: 'unknown', seq: 1, payload: {} }), false)
+
+  // 受控媒体：方法表已含 mediaFetch；请求校验 + 体积/MIME 常量
+  assert.equal(GAMECENTER_REMOTE_METHODS.includes('mediaFetch'), true)
+  assert.equal(MEDIA_MAX_BYTES, 2 * 1024 * 1024, '媒体上限必须与目录单图 2 MiB 一致')
+  assert.ok(MEDIA_ALLOWED_MIMES.includes('image/png'))
+  assert.ok(!MEDIA_ALLOWED_MIMES.includes('image/svg+xml'), 'SVG 必须被拒')
+  // expectedMime / expectedSha256 均必填（来自目录元数据，不得可选绕过）
+  assert.deepEqual(
+    validateMediaFetchRequest({ url: 'https://x/y.png', expectedMime: 'image/png', expectedSha256: 'sha256:' + 'a'.repeat(64) }),
+    [],
+  )
+  assert.ok(validateMediaFetchRequest({ url: 'https://x/y.png' }).length >= 2, '缺 expectedMime/expectedSha256 必须拒绝')
+  assert.ok(validateMediaFetchRequest({ url: 'https://x/y.png', expectedMime: 'image/svg+xml', expectedSha256: 'sha256:' + 'a'.repeat(64) }).length >= 1)
+  assert.ok(validateMediaFetchRequest({ url: 'https://x/y.png', expectedMime: 'image/png', expectedSha256: 'a'.repeat(64) }).length >= 1, '摘要缺 sha256: 前缀必须拒绝')
+  assert.ok(
+    validateMediaFetchRequest({ url: 'https://x/y.png', expectedMime: 'image/png', expectedSha256: 'sha256:' + 'a'.repeat(64), maxBytes: 2 * 1024 * 1024 + 1 }).length >= 1,
+    'maxBytes 越过 2 MiB 必须拒绝',
+  )
+})
+
+test('W-31 catalogUninstall 参数校验：gameId/commit 必须为安全路径段且 commit 必须为 40 位 SHA', () => {
+  assert.deepEqual(validateCatalogUninstallRequest({ gameId: 'example.minesweeping' }), [])
+  assert.deepEqual(validateCatalogUninstallRequest({ gameId: 'example.minesweeping', commit: COMMIT }), [])
+
+  // 非法 gameId
+  assert.ok(validateCatalogUninstallRequest({ gameId: '../escape' }).length >= 1)
+  assert.ok(validateCatalogUninstallRequest({ gameId: '' }).length >= 1)
+
+  // 非法 commit
+  assert.ok(validateCatalogUninstallRequest({ gameId: 'example.minesweeping', commit: 'main' }).length >= 1)
+  assert.ok(validateCatalogUninstallRequest({ gameId: 'example.minesweeping', commit: '../escape' }).length >= 1)
 })

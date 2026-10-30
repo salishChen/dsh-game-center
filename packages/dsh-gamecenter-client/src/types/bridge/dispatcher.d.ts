@@ -6,6 +6,8 @@
  * @property {ReturnType<typeof createRateLimiter>} [rateLimiter] 频率限制器
  * @property {(payload: any) => Promise<any> | any} [onAiGenerate] 处理 AI 生成（阶段1用 fixture）
  * @property {(payload: any) => Promise<any> | any} [onAiCancel] 处理 AI 取消
+ * @property {(payload: any) => Promise<any> | any} [onWalletCommand] 钱包与工坊进度
+ * @property {(payload: any) => Promise<any> | any} [onGameCommand] Host 权威牌局命令
  * @property {(payload: any) => Promise<any> | any} [onCheckpoint] 处理存档检查点
  * @property {string} [playerId] 宿主绑定的玩家身份（由 Host 注入，绝不取游戏自报值）
  * @property {(payload: any) => Promise<void> | void} [onReady] 处理准备就绪
@@ -21,6 +23,8 @@ export function createBridgeDispatcher(options: BridgeDispatcherOptions): {
     triggerPause: ({ reason }: {
         reason: string;
     }) => boolean;
+    control: (action: "suspend" | "resume") => Promise<any>;
+    sendTheme: (mode: "dark" | "light", source?: "dsh" | "os") => boolean;
     dispose: () => void;
 };
 /**
@@ -31,6 +35,8 @@ export function createBridgeDispatcher(options: BridgeDispatcherOptions): {
  * @property {string} [initialRngState] 恢复时已有的随机数状态
  * @property {number} [initialElapsedMs] 初始累计游戏毫秒
  * @property {number} [initialRevision] 恢复时已有的基准 revision
+ * @property {(payload: any) => Promise<any> | any} [onWalletCommand] 钱包与工坊进度
+ * @property {(payload: any) => Promise<any> | any} [onGameCommand] Host 权威牌局命令
  * @property {(payload: any) => Promise<{ ok?: boolean, revision?: number, idempotentReplay?: boolean, code?: string, message?: string }> | any} onCheckpoint 存档检查点处理回调（可直连 SaveStore.writeCheckpoint）
  * @property {(payload: any) => Promise<any> | any} [onAiGenerate] 处理 AI 生成
  * @property {(payload: any) => Promise<any> | any} [onAiCancel] 处理 AI 取消
@@ -46,6 +52,26 @@ export function createBridgeDispatcher(options: BridgeDispatcherOptions): {
  */
 export function connectSDKToDispatcher(options: ConnectSDKToDispatcherOptions): {
     sdk: {
+        wallet: {
+            command(input: {
+                action: string;
+                operationId?: string;
+                expectedRevision?: number;
+                amount?: number;
+                state?: any;
+            }): Promise<any>;
+        };
+        game: {
+            command(input: {
+                action: string;
+                operationId: string;
+                expectedRevision?: number;
+                bid?: number;
+                cards?: number[];
+                mode?: "adventure" | "duel";
+                phase?: string;
+            }): Promise<any>;
+        };
         ai: {
             generate(request: AiGenerateRequest): Promise<any>;
             cancel(request: {
@@ -91,6 +117,8 @@ export function connectSDKToDispatcher(options: ConnectSDKToDispatcherOptions): 
         triggerPause: ({ reason }: {
             reason: string;
         }) => boolean;
+        control: (action: "suspend" | "resume") => Promise<any>;
+        sendTheme: (mode: "dark" | "light", source?: "dsh" | "os") => boolean;
         dispose: () => void;
     };
     port1: MessagePort;
@@ -122,6 +150,14 @@ export type BridgeDispatcherOptions = {
      * 处理 AI 取消
      */
     onAiCancel?: (payload: any) => Promise<any> | any;
+    /**
+     * 钱包与工坊进度
+     */
+    onWalletCommand?: (payload: any) => Promise<any> | any;
+    /**
+     * Host 权威牌局命令
+     */
+    onGameCommand?: (payload: any) => Promise<any> | any;
     /**
      * 处理存档检查点
      */
@@ -164,6 +200,14 @@ export type ConnectSDKToDispatcherOptions = {
      * 恢复时已有的基准 revision
      */
     initialRevision?: number;
+    /**
+     * 钱包与工坊进度
+     */
+    onWalletCommand?: (payload: any) => Promise<any> | any;
+    /**
+     * Host 权威牌局命令
+     */
+    onGameCommand?: (payload: any) => Promise<any> | any;
     /**
      * 存档检查点处理回调（可直连 SaveStore.writeCheckpoint）
      */

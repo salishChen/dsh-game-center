@@ -82,7 +82,10 @@ test('打包产物必须把外部依赖保留为 require 调用', () => {
 });
 
 test('bundle factory loads using the DSH 0.2.1-rc.2 platform module table', () => {
-  const src = readFileSync(path.join(root, 'dist', 'client.js'), 'utf8');
+  // 【读 staging 候选，不读 dist】dist 是**在线服务产物**，部署即变化；
+  // 若断言读 dist，每次部署都会让本测试因"版本时点"而红/绿，与代码质量无关。
+  // 候选产物才是受控可复现的验证对象（dist 的结构契约由上面的用例单独覆盖）。
+  const src = readFileSync(path.join(root, 'staging', 'client.js'), 'utf8');
   // Names from the installed frontend's SZ(). cordis/ui is not a platform module.
   const platformModules = new Map([
     'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client',
@@ -100,11 +103,13 @@ test('bundle factory loads using the DSH 0.2.1-rc.2 platform module table', () =
     return platformModules.get(specifier);
   });
   assert.equal(typeof plugin.apply, 'function');
-  assert.deepEqual(Array.from(plugin.inject), ['slots', 'locale', 'remote']);
+  // inject 声明 v3 起新增 'theme'（DSH 主题服务，用于经已配对 port 下发主题）。
+  assert.deepEqual(Array.from(plugin.inject), ['slots', 'locale', 'remote', 'theme']);
 });
 
-test('plugin waits for slots, registers the overlay identity, and opens from its main panel', () => {
-  const src = readFileSync(path.join(root, 'dist', 'client.js'), 'utf8');
+test('plugin waits for slots, registers the overlay identity, and mounts the game-center page', () => {
+  // 【读 staging 候选，不读 dist】理由同上一条：dist 随部署变化，会让断言因时点而红/绿。
+  const src = readFileSync(path.join(root, 'staging', 'client.js'), 'utf8');
   let registration;
   const react = {
     createElement: (type, props, ...children) => ({ type, props, children }),
@@ -142,11 +147,14 @@ test('plugin waits for slots, registers the overlay identity, and opens from its
   const overlayProps = entries.get('shell.overlay').options.inject();
   assert.equal(typeof overlayProps.t, 'function');
   assert.equal(overlayProps.overlay.open, false);
+
+  // v3 页面化：main 槽渲染的是**游戏库页面**（GameCenterPage 元素），
+  // 不再是"点击打开弹层"的按钮占位，也**不会**进入页面就自动弹诊断。
   const panel = entries.get('main').component();
-  assert.equal(overlayProps.overlay.open, true, 'selecting the main panel opens the overlay');
-  overlayProps.overlay.set(false);
-  panel.children[0].props.onClick();
-  assert.equal(overlayProps.overlay.open, true, 'the panel can reopen a closed overlay');
+  assert.equal(typeof panel.type, 'function', 'main 槽必须渲染一个组件（游戏库页面）');
+  assert.equal(panel.props.t, overlayProps.t, '页面与弹层共享同一套 locale 取值');
+  assert.equal(panel.props.sessionController, overlayProps.sessionController, '页面与弹层共享同一会话控制器');
+  assert.equal(overlayProps.overlay.open, false, '进入页面不得自动弹诊断/弹层');
   dispose();
   assert.deepEqual(released.sort(), ['main', 'shell.overlay', 'sidebar.panellist']);
 });

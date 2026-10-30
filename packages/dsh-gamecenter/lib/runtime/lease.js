@@ -312,7 +312,7 @@ export class LeaseRegistry {
             lease.state = 'running';
             lease.expiresAt = isoFrom(nowMs + lease.ttlMs);
         }
-        if (Date.parse(lease.expiresAt) <= nowMs) {
+        if (lease.state !== 'suspended' && Date.parse(lease.expiresAt) <= nowMs) {
             return violation('PAUSED', '控制租约已过期，需重新获取控制权。', {
                 reason: 'lease-expired',
                 expiresAt: lease.expiresAt,
@@ -376,7 +376,7 @@ export class LeaseRegistry {
                 sealed: lease.sealed,
             });
         }
-        if (lease.state === 'pausing' || lease.state === 'paused' || lease.state === 'recovery-available') {
+        if (lease.state === 'suspended' || lease.state === 'pausing' || lease.state === 'paused' || lease.state === 'recovery-available') {
             return violation('PAUSED', '游戏处于暂停流程中，不再受理新请求。', { state: lease.state });
         }
         if (lease.state === 'pending') {

@@ -21,6 +21,19 @@ export interface InstallSecurityLimits {
   maxFileCount?: number | undefined
 }
 
+/**
+ * 安装结果上报钩子（阶段 3，契约 `/v1/reports`）。
+ *
+ * 全部可选、全部 fire-and-forget：实现方不得让上报失败影响安装结果，
+ * 统计也永不参与安装判定。
+ */
+export interface InstallReporter {
+  downloadStarted?(): void
+  installSucceeded?(): void
+  downloadFailed?: (detail?: unknown) => void
+  installFailed?(): void
+}
+
 export interface InstallOptions {
   plan: InstallPlan
   packagesDir: string
@@ -28,6 +41,8 @@ export interface InstallOptions {
   files: readonly InstallSourceFile[]
   manifestContent: string | Uint8Array | Buffer
   limits?: InstallSecurityLimits | undefined
+  /** 可选上报钩子；缺省时安装行为完全不变。 */
+  reporter?: InstallReporter | undefined
 }
 
 export type InstallResult =

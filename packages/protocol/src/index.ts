@@ -50,7 +50,9 @@ export {
 export {
   GAME_ID_PATTERN,
   isValidGameId,
+  hasSaveCapability,
   type GameManifestV1,
+  type SaveCapability,
   type ManifestAiSlot,
 } from './manifest.js'
 
@@ -124,6 +126,11 @@ export {
   isLaunchTokenShapeValid,
   validateAbandonRuntimeRequest,
   utf8ByteLength,
+  HOST_PUSH_EVENTS,
+  THEME_MODES,
+  isThemeMode,
+  validateThemePushPayload,
+  validateHostPushEnvelope,
   type BridgeMethod,
   type SaveSlot,
   type LeaseReclaimReason,
@@ -137,6 +144,10 @@ export {
   type OutboundEnvelope,
   type HandshakeRequest,
   type HandshakeResponse,
+  type HostPushEventName,
+  type ThemeMode,
+  type ThemePushPayload,
+  type HostPushEnvelope,
 } from './bridge.js'
 
 export {
@@ -144,6 +155,23 @@ export {
   DSH_ENGINES_RANGE,
   type DshVersionLock,
 } from './dshVersions.js'
+
+export {
+  RUNTIME_PLATFORM_DSH,
+  RUNTIME_PLATFORM_GAMECENTER,
+  VERSION_EVIDENCE_KINDS,
+  GATE_ELIGIBLE_EVIDENCE,
+  resolveRuntimeVersion,
+  resolveRunningVersions,
+  observeDshVersionFromDesktopRuntime,
+  observeDshVersionFromPackageJson,
+  observeGameCenterVersion,
+  type RuntimePlatform,
+  type VersionEvidenceKind,
+  type RuntimeVersionObservation,
+  type RuntimeVersionResolution,
+  type RunningVersionPair,
+} from './runtimeVersion.js'
 
 export {
   GAMECENTER_REMOTE_METHODS,
@@ -174,6 +202,9 @@ export {
   bundleContentBytes,
   validateGameBundleFiles,
   validateFramePolicy,
+  MEDIA_MAX_BYTES,
+  MEDIA_ALLOWED_MIMES,
+  validateMediaFetchRequest,
   type SaveCheckpointWireRequest,
   type SaveCheckpointWireResult,
   type PreviewListWireEntry,
@@ -189,11 +220,21 @@ export {
   type CatalogListWireResult,
   type CatalogInstallWireRequest,
   type CatalogInstallWireResult,
+  type CatalogUninstallWireRequest,
+  type CatalogUninstallWireResult,
+  validateCatalogUninstallRequest,
   type GameBundleWireRequest,
   type GameBundleWireFile,
   type GameBundleWireResult,
   type SaveLatestWireRequest,
   type SaveLatestWireResult,
+  type MediaFetchRequest,
+  type MediaFetchResult,
+  validateAiGenerateRequest,
+  AI_GENERATE_MAX_INPUT_BYTES,
+  AI_GENERATE_SLOT_PATTERN,
+  type AiGenerateWireRequest,
+  type AiGenerateWireResult,
   type WireViolation,
 } from './wiring.js'
 
@@ -208,6 +249,8 @@ export {
   MEDIA_ALLOWED_MIME,
   findMarkdownHazards,
   isAllowedMediaUrl,
+  isTrustedMediaOriginUrl,
+  normalizeGameRepositoryUrl,
   validateDisplayMetadata,
   canonicalMetadataJson,
   describeMetadataDigestInput,
@@ -219,3 +262,13 @@ export {
   type CatalogMetadataViolation,
   type CatalogTrustTuple,
 } from './catalogMetadata.js'
+
+export type { AiModelBinding, SetAiBindingRequest, RuntimeControlRequest } from './wiring.js'
+export type { RuntimeControlResult, SetAiBindingResult, CancelAiRequest } from './wiring.js'
+export {getSaveMode} from './manifest.js'
+export type {LandlordCommand,LandlordActionRequest,LandlordActionResult} from './wiring.js'
+export * from './arena.js'
+export * from './arena-personas.js'
+
+export type {WhaleWalletStatus,WalletStatusRequest,WalletStatusResult,WalletActionWireRequest,WalletActionWireResult} from './wallet.js'
+export {GAME_CATEGORIES,validGameCategories} from './categories.js'

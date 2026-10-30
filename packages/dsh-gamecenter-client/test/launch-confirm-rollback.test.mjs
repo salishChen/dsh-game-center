@@ -217,7 +217,7 @@ function makeRecordingService(overrides = {}) {
     gameBundle: async () => ({
       ok: true,
       entryPath: 'dist/index.html',
-      files: [{ path: 'dist/index.html', content: '<!doctype html><html><body>game</body></html>' }],
+      files: [{path:'gamecenter.json',content:JSON.stringify({schemaVersion:1,id:'example.minesweeping',version:'1.0.0',runtime:{kind:'web',entry:'dist/index.html'}})}, { path: 'dist/index.html', content: '<!doctype html><html><body>game</body></html>' }],
     }),
     handshake: async (input) => {
       calls.push({ method: 'handshake', input });
@@ -270,11 +270,11 @@ test('启动确认失败：必须清空会话、调用一次 abandonRuntime、�
 
   const launchBtn = findNode(
     withEntries,
-    (n) => n.props?.['data-gamecenter-action'] === 'launch' && typeof n.props?.onClick === 'function',
+    (n) => typeof n.props?.onLaunch === 'function' && n.props.entries?.length > 0,
   );
-  assert.ok(launchBtn, '目录必须渲染出可点击的启动条目');
+  assert.ok(launchBtn, '游戏库必须接收已过滤的目录与启动回调');
 
-  launchBtn.props.onClick();
+  launchBtn.props.onLaunch(launchBtn.props.entries[0]);
   await new Promise((r) => setTimeout(r, 60));
   const latest = harness.rerender() ?? withEntries;
 
@@ -317,10 +317,10 @@ test('confirmLaunch 契约：leaseStatus 返回 absent 必须判为失败并放�
   const withEntries = harness.rerender() ?? vdom;
   const launchBtn = findNode(
     withEntries,
-    (n) => n.props?.['data-gamecenter-action'] === 'launch' && typeof n.props?.onClick === 'function',
+    (n) => typeof n.props?.onLaunch === 'function' && n.props.entries?.length > 0,
   );
-  assert.ok(launchBtn, '目录必须渲染出可点击的启动条目');
-  launchBtn.props.onClick();
+  assert.ok(launchBtn, '游戏库必须接收已过滤的目录与启动回调');
+  launchBtn.props.onLaunch(launchBtn.props.entries[0]);
   await new Promise((r) => setTimeout(r, 60));
   const latest = harness.rerender() ?? withEntries;
 
@@ -373,10 +373,10 @@ test('启动确认成功：正常路径必须进入运行态且确认先于 ifra
   const withEntries = harness.rerender() ?? vdom;
   const launchBtn = findNode(
     withEntries,
-    (n) => n.props?.['data-gamecenter-action'] === 'launch' && typeof n.props?.onClick === 'function',
+    (n) => typeof n.props?.onLaunch === 'function' && n.props.entries?.length > 0,
   );
-  assert.ok(launchBtn, '目录必须渲染出可点击的启动条目');
-  launchBtn.props.onClick();
+  assert.ok(launchBtn, '游戏库必须接收已过滤的目录与启动回调');
+  launchBtn.props.onLaunch(launchBtn.props.entries[0]);
   await new Promise((r) => setTimeout(r, 80));
   const latest = harness.rerender() ?? withEntries;
 

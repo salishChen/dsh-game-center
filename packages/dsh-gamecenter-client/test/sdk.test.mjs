@@ -83,11 +83,12 @@ test('GameClock: 仅在 Running 阶段累计游戏时间，暂停时不按现实
   assert.equal(clock.getElapsedMs(), 950);
 });
 
-test('SDK 表面安全边界：仅暴露受限白名单能力，绝对无宿主对象与凭据泄露', () => {
+test('SDK 表面安全边界：仅暴露受限白名单能力，绝对无宿主对象与凭据泄露', t => {
   // @ts-expect-error test mock
   const channel = new MessageChannel();
   // @ts-expect-error worker_threads port vs DOM port
   const sdk = createGameCenterSDK({ port: channel.port1 });
+  t.after(() => { sdk.disposeInternal(); channel.port1.close(); channel.port2.close(); });
 
   // 1. 白名单能力必须存在
   assert.equal(typeof sdk.ai?.generate, 'function');
@@ -101,7 +102,8 @@ test('SDK 表面安全边界：仅暴露受限白名单能力，绝对无宿主�
 
   // 2. 绝对不可暴露宿主能力
   const keys = Object.keys(sdk);
-  assert.deepEqual(keys.sort(), ['ai', 'assets', 'clock', 'lifecycle', 'random', 'save']);
+  assert.deepEqual(keys.sort(), ['ai', 'assets', 'clock', 'game', 'lifecycle', 'random', 'save', 'wallet']);
+  assert.equal(typeof sdk.game.command, 'function');
 
   const forbidden = [
     'runtimeToken',

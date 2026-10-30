@@ -30,6 +30,8 @@ import { createGameCenterSDK } from '../sdk/index.js';
  * @property {ReturnType<typeof createRateLimiter>} [rateLimiter] 频率限制器
  * @property {(payload: any) => Promise<any> | any} [onAiGenerate] 处理 AI 生成（阶段1用 fixture）
  * @property {(payload: any) => Promise<any> | any} [onAiCancel] 处理 AI 取消
+ * @property {(payload: any) => Promise<any> | any} [onWalletCommand] 钱包与工坊进度
+ * @property {(payload: any) => Promise<any> | any} [onGameCommand] Host 权威牌局命令
  * @property {(payload: any) => Promise<any> | any} [onCheckpoint] 处理存档检查点
  * @property {string} [playerId] 宿主绑定的玩家身份（由 Host 注入，绝不取游戏自报值）
  * @property {(payload: any) => Promise<void> | void} [onReady] 处理准备就绪
@@ -46,6 +48,27 @@ export function createBridgeDispatcher(options) {
   const limiter = options.rateLimiter ?? createRateLimiter();
   /** @type {MessagePort | null} */
   let boundPort = options.port ?? null;
+  /** @type {number | null} */
+  let pauseSentGeneration = null;
+  /**
+   * 主题推送的单增序号（协议 host.push 信封的 `seq`）。
+   * 游戏据此丢弃乱序/重复推送；每个 dispatcher 实例独立计数。
+   */
+  let themeSeq = 0;
+  let controlSeq = 0;
+  /** @type {Map<string, {resolve: Function, reject: Function, timer: ReturnType<typeof setTimeout>}>} */
+  const controlPending = new Map();
+  /** @param {'suspend' | 'resume'} action */
+  function control(action) {
+    if (!boundPort) return Promise.reject(new Error('游戏端口尚未就绪'));
+    if (action === 'suspend') { lease.state = 'suspended'; lease.inputOpen = false; lease.clockFrozen = true; }
+    const controlId = 'control-' + (++controlSeq);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { controlPending.delete(controlId); reject(new Error('游戏暂停/恢复确认超时')); }, 3000);
+      controlPending.set(controlId, {resolve, reject, timer});
+      boundPort?.postMessage({type:'lifecycle:control', action, controlId, generation:lease.generation});
+    });
+  }
   /** 当前绑定的消息监听器；dispose 时用于精确解绑。 */
   /** @type {((eventOrData: any) => void) | null} */
   let currentListener = null;
@@ -98,6 +121,15 @@ export function createBridgeDispatcher(options) {
     }
 
     const { requestId, method, payload } = parsed;
+    if (method === 'lifecycle.controlAck') {
+      const ack = /** @type {any} */ (payload);
+      const pending = controlPending.get(ack?.controlId);
+      if (pending && ack.generation === lease.generation) {
+        clearTimeout(pending.timer); controlPending.delete(ack.controlId);
+        if (ack.ok === true) pending.resolve(ack); else pending.reject(new Error(ack.message || '游戏暂停/恢复失败'));
+      }
+      return;
+    }
 
     // 2. 状态、端口与运行代次准入检查
     const envelopeGen =
@@ -157,6 +189,18 @@ export function createBridgeDispatcher(options) {
 
     // 5. 分发到具体业务方法
     try {
+      if (method === 'wallet.command') {
+        if (!options.onWalletCommand) throw new Error('钱包服务未就绪');
+        const result = await options.onWalletCommand(payload);
+        boundPort?.postMessage(outboundOk(requestId, result));
+        return;
+      }
+      if (method === 'game.command') {
+        if (!options.onGameCommand) throw new Error('Host 牌局服务未就绪');
+        const result = await options.onGameCommand(payload);
+        boundPort?.postMessage(outboundOk(requestId, result));
+        return;
+      }
       if (method === 'lifecycle.ready') {
         openInput(lease);
         if (options.onReady) await options.onReady(payload);
@@ -301,7 +345,13 @@ export function createBridgeDispatcher(options) {
           }
           return;
         }
-        if (options.onPauseAck) await options.onPauseAck(payload);
+        try {
+          if (options.onPauseAck) await options.onPauseAck({...(payload && typeof payload === 'object' ? payload : {}), generation:ackGen, revision:ackRev});
+        } catch (error) {
+          // Host did not confirm persistence: leave the pending close eligible for timeout recovery.
+          lease.state = 'pausing'; lease.pendingPauseGeneration = ackGen;
+          throw error;
+        }
         if (boundPort) {
           boundPort.postMessage(outboundOk(requestId, { acknowledged: true, state: lease.state }));
         }
@@ -310,14 +360,16 @@ export function createBridgeDispatcher(options) {
 
       if (method === 'ai.generate') {
         if (!options.onAiGenerate) {
-          // 阶段1默认使用确定性 fixture 结果，禁止真实调用付费模型
+          // 【不再伪造成功 · 2026-10-21】此前这里直接回一条 fixture 文本
+          // `AI生成对局完成（阶段1 fixture）`。游戏侧按自己的 schema 校验必然失败，
+          // 于是静默降级成本地生成，玩家看到的是"AI 没连上/直接报错"——假成功掩盖了
+          // 真实断点。没有转发实现时必须**明确失败**，游戏据此提示重试或改玩经典模式。
           if (boundPort) {
             boundPort.postMessage(
-              outboundOk(requestId, {
-                operationId: /** @type {any} */ (payload)?.operationId || 'op-fixture',
-                output: { text: 'AI生成对局完成（阶段1 fixture）' },
-                binding: { providerId: 'fixture', modelId: 'mock-v1' },
-                structuredNative: false,
+              outboundError(requestId, {
+                code: 'CAPABILITY_UNAVAILABLE',
+                message: 'AI 生成暂不可用：未装配 Host aiGenerate 转发',
+                retryable: false,
               }),
             );
           }
@@ -360,7 +412,9 @@ export function createBridgeDispatcher(options) {
    */
   function triggerPause({ reason }) {
     const pauseReq = requestPause(lease, { reason });
-    if (!pauseReq) return false;
+    if (!pauseReq && !(lease.state === 'pausing' && lease.pendingPauseGeneration === lease.generation)) return false;
+    if (pauseSentGeneration === lease.generation) return false;
+    pauseSentGeneration = lease.generation;
     if (boundPort) {
       boundPort.postMessage({
         type: 'lifecycle:pause',
@@ -372,6 +426,36 @@ export function createBridgeDispatcher(options) {
   }
 
   /**
+   * 经**已配对的 MessagePort** 下发主题（v3）。
+   *
+   * 【为什么必须走这条 port】主题是玩家可见状态，若监听 window 的 theme-change
+   * 字符串消息，任意同页脚本都能伪造，把游戏刷成错误配色。这条 port 是握手
+   * （event.source + nonce + runtimeInstanceId 三者校验通过）之后才建立的，
+   * 来源天然可信，因此主题只从这里下发。
+   *
+   * 【信封格式：协议唯一契约】`{ kind:'host.push', event:'theme', seq, payload:{ mode, source } }`。
+   * 与游戏 SDK 共用同一格式，不再各建一套；`seq` 单增，游戏据此丢弃乱序/重复。
+   * `source`：'dsh' = DSH 显式主题（**优先于 OS 偏好**）；'os' = 无显式主题时回落 OS。
+   *
+   * @param {'dark' | 'light'} mode
+   * @param {'dsh' | 'os'} [source]
+   * @returns {boolean} 是否成功下发
+   */
+  function sendTheme(mode, source = 'dsh') {
+    if (mode !== 'dark' && mode !== 'light') return false;
+    if (source !== 'dsh' && source !== 'os') return false;
+    if (!boundPort) return false;
+    themeSeq += 1;
+    boundPort.postMessage({
+      kind: 'host.push',
+      event: 'theme',
+      seq: themeSeq,
+      payload: { mode, source },
+    });
+    return true;
+  }
+
+  /**
    * 解绑端口并释放监听器。
    *
    * 为什么必须有：端口若仍持有 'message' 监听，Node 的事件循环不会退出
@@ -379,6 +463,8 @@ export function createBridgeDispatcher(options) {
    * 释放后 `lease.portBound` 置 false，后续入站消息不再被处理。
    */
   function dispose() {
+    for (const pending of controlPending.values()) { clearTimeout(pending.timer); pending.reject(new Error('游戏已关闭')); }
+    controlPending.clear();
     const port = boundPort;
     const listener = currentListener;
     if (port && listener) {
@@ -403,6 +489,8 @@ export function createBridgeDispatcher(options) {
     bindPort,
     handleMessage,
     triggerPause,
+    control,
+    sendTheme,
     dispose,
   };
 }
@@ -415,6 +503,8 @@ export function createBridgeDispatcher(options) {
  * @property {string} [initialRngState] 恢复时已有的随机数状态
  * @property {number} [initialElapsedMs] 初始累计游戏毫秒
  * @property {number} [initialRevision] 恢复时已有的基准 revision
+ * @property {(payload: any) => Promise<any> | any} [onWalletCommand] 钱包与工坊进度
+ * @property {(payload: any) => Promise<any> | any} [onGameCommand] Host 权威牌局命令
  * @property {(payload: any) => Promise<{ ok?: boolean, revision?: number, idempotentReplay?: boolean, code?: string, message?: string }> | any} onCheckpoint 存档检查点处理回调（可直连 SaveStore.writeCheckpoint）
  * @property {(payload: any) => Promise<any> | any} [onAiGenerate] 处理 AI 生成
  * @property {(payload: any) => Promise<any> | any} [onAiCancel] 处理 AI 取消
@@ -448,6 +538,8 @@ export function connectSDKToDispatcher(options) {
   };
   if (options.onAiGenerate !== undefined) dispatcherOpts.onAiGenerate = options.onAiGenerate;
   if (options.onAiCancel !== undefined) dispatcherOpts.onAiCancel = options.onAiCancel;
+  if (options.onWalletCommand !== undefined) dispatcherOpts.onWalletCommand = options.onWalletCommand;
+  if (options.onGameCommand !== undefined) dispatcherOpts.onGameCommand = options.onGameCommand;
   if (options.onReady !== undefined) dispatcherOpts.onReady = options.onReady;
   if (options.onPauseAck !== undefined) dispatcherOpts.onPauseAck = options.onPauseAck;
 

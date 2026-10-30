@@ -28,10 +28,19 @@ export const ERROR_CODES = [
   'REQUEST_OUTCOME_UNKNOWN',
   /** 存档与当前游戏版本/SDK 主版本不兼容。 */
   'SAVE_INCOMPATIBLE',
+  /** manifest 未声明存档能力；调用 checkpoint/saveAck/saveLatest 的非致命结果，调用方应忽略并继续关闭。 */
+  'SAVE_UNSUPPORTED',
   /** 协议层校验失败：Schema、大小上限、未知字段、未知主版本。 */
   'PROTOCOL_INVALID',
   /** 运行代次或控制租约不匹配，拒绝迟到写入。 */
   'STALE_RUNTIME',
+  /**
+   * 目录后台不可达（断网、代理错误、后台重启、超时）。
+   *
+   * 必须与「没有匹配的审批记录」分开：前者是环境问题、稍后可重试，
+   * 后者是业务结论。混用会把每次网络抖动都显示成"没审批"，带偏排查方向。
+   */
+  'CATALOG_UNREACHABLE',
   /**
    * 未预期内部错误。新增错误码必须新增到本表并在协议评审中声明，
    * 不得用任意字符串充当错误码。
@@ -69,8 +78,10 @@ export const DEFAULT_RETRYABLE: Record<ErrorCode, boolean> = {
   INVALID_OUTPUT: true,
   REQUEST_OUTCOME_UNKNOWN: false,
   SAVE_INCOMPATIBLE: false,
+  SAVE_UNSUPPORTED: false,
   PROTOCOL_INVALID: false,
   STALE_RUNTIME: false,
+  CATALOG_UNREACHABLE: true,
   INTERNAL: false,
 }
 

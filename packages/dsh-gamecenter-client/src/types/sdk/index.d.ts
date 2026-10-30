@@ -9,8 +9,7 @@
  * @property {string} slot
  * @property {string} [operation]
  * @property {string} operationId 幂等操作 ID
- * @property {GameMessage[]} messages
- * @property {Record<string, unknown>} [responseSchema]
+ * @property {Record<string, unknown>} input slot 的结构化输入
  */
 /**
  * @typedef {object} LifecycleHooks
@@ -35,9 +34,31 @@ export function createGameCenterSDK(options: {
     initialElapsedMs?: number | undefined;
     initialRevision?: number | undefined;
 }): {
+    wallet: {
+        /** @param {{action:string;operationId?:string;expectedRevision?:number;amount?:number;state?:any}} input */
+        command(input: {
+            action: string;
+            operationId?: string;
+            expectedRevision?: number;
+            amount?: number;
+            state?: any;
+        }): Promise<any>;
+    };
+    game: {
+        /** @param {{action:string; operationId:string; expectedRevision?:number; bid?:number; cards?:number[]; mode?:'adventure'|'duel'; phase?:string}} input */
+        command(input: {
+            action: string;
+            operationId: string;
+            expectedRevision?: number;
+            bid?: number;
+            cards?: number[];
+            mode?: "adventure" | "duel";
+            phase?: string;
+        }): Promise<any>;
+    };
     ai: {
         /**
-         * 请求 AI 生成（阶段1返回 fixture 数据，禁止真实付费调用）。
+         * 通过当前实例的 AI slot 请求所选模型。
          * @param {AiGenerateRequest} request
          * @returns {Promise<any>}
          */
@@ -126,9 +147,31 @@ export function createGameCenterSDKWithDispose(options: {
     initialRevision?: number;
 }): {
     sdk: {
+        wallet: {
+            /** @param {{action:string;operationId?:string;expectedRevision?:number;amount?:number;state?:any}} input */
+            command(input: {
+                action: string;
+                operationId?: string;
+                expectedRevision?: number;
+                amount?: number;
+                state?: any;
+            }): Promise<any>;
+        };
+        game: {
+            /** @param {{action:string; operationId:string; expectedRevision?:number; bid?:number; cards?:number[]; mode?:'adventure'|'duel'; phase?:string}} input */
+            command(input: {
+                action: string;
+                operationId: string;
+                expectedRevision?: number;
+                bid?: number;
+                cards?: number[];
+                mode?: "adventure" | "duel";
+                phase?: string;
+            }): Promise<any>;
+        };
         ai: {
             /**
-             * 请求 AI 生成（阶段1返回 fixture 数据，禁止真实付费调用）。
+             * 通过当前实例的 AI slot 请求所选模型。
              * @param {AiGenerateRequest} request
              * @returns {Promise<any>}
              */
@@ -229,8 +272,10 @@ export type AiGenerateRequest = {
      * 幂等操作 ID
      */
     operationId: string;
-    messages: GameMessage[];
-    responseSchema?: Record<string, unknown>;
+    /**
+     * slot 的结构化输入
+     */
+    input: Record<string, unknown>;
 };
 export type LifecycleHooks = {
     pause: () => Promise<unknown> | unknown;

@@ -22,7 +22,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsc -p tsconfig.build.json && node --test test/contract.test.mjs test/install.test.mjs test/checkpoint.test.mjs test/wiring.test.mjs test/catalogMetadata.test.mjs"
+    "test": "tsc -p tsconfig.build.json && node --test --test-timeout=15000 test/*.test.mjs"
   },
   "license": "UNLICENSED",
   "engines": {

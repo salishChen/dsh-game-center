@@ -1,3 +1,38 @@
+var __runInitializers = (this && this.__runInitializers) || function (thisArg, initializers, value) {
+    var useValue = arguments.length > 2;
+    for (var i = 0; i < initializers.length; i++) {
+        value = useValue ? initializers[i].call(thisArg, value) : initializers[i].call(thisArg);
+    }
+    return useValue ? value : void 0;
+};
+var __esDecorate = (this && this.__esDecorate) || function (ctor, descriptorIn, decorators, contextIn, initializers, extraInitializers) {
+    function accept(f) { if (f !== void 0 && typeof f !== "function") throw new TypeError("Function expected"); return f; }
+    var kind = contextIn.kind, key = kind === "getter" ? "get" : kind === "setter" ? "set" : "value";
+    var target = !descriptorIn && ctor ? contextIn["static"] ? ctor : ctor.prototype : null;
+    var descriptor = descriptorIn || (target ? Object.getOwnPropertyDescriptor(target, contextIn.name) : {});
+    var _, done = false;
+    for (var i = decorators.length - 1; i >= 0; i--) {
+        var context = {};
+        for (var p in contextIn) context[p] = p === "access" ? {} : contextIn[p];
+        for (var p in contextIn.access) context.access[p] = contextIn.access[p];
+        context.addInitializer = function (f) { if (done) throw new TypeError("Cannot add initializers after decoration has completed"); extraInitializers.push(accept(f || null)); };
+        var result = (0, decorators[i])(kind === "accessor" ? { get: descriptor.get, set: descriptor.set } : descriptor[key], context);
+        if (kind === "accessor") {
+            if (result === void 0) continue;
+            if (result === null || typeof result !== "object") throw new TypeError("Object expected");
+            if (_ = accept(result.get)) descriptor.get = _;
+            if (_ = accept(result.set)) descriptor.set = _;
+            if (_ = accept(result.init)) initializers.unshift(_);
+        }
+        else if (_ = accept(result)) {
+            if (kind === "field") initializers.unshift(_);
+            else descriptor[key] = _;
+        }
+    }
+    if (target) Object.defineProperty(target, contextIn.name, descriptor);
+    done = true;
+};
+import { WhaleWallet, hasWhaleWallet } from '../storage/whale-wallet.js';
 /**
  * Host Remote 服务：`gameCenter` 命名空间（**本项目拟新增协议**，DSH 中不存在）。
  *
@@ -42,49 +77,26 @@
  * `{accepted:false, …, error:{code, message}}`；`leaseStatus` 对无效凭证统一回
  * `{absent:true}`（不区分原因，避免探测）。
  */
-var __runInitializers = (this && this.__runInitializers) || function (thisArg, initializers, value) {
-    var useValue = arguments.length > 2;
-    for (var i = 0; i < initializers.length; i++) {
-        value = useValue ? initializers[i].call(thisArg, value) : initializers[i].call(thisArg);
-    }
-    return useValue ? value : void 0;
-};
-var __esDecorate = (this && this.__esDecorate) || function (ctor, descriptorIn, decorators, contextIn, initializers, extraInitializers) {
-    function accept(f) { if (f !== void 0 && typeof f !== "function") throw new TypeError("Function expected"); return f; }
-    var kind = contextIn.kind, key = kind === "getter" ? "get" : kind === "setter" ? "set" : "value";
-    var target = !descriptorIn && ctor ? contextIn["static"] ? ctor : ctor.prototype : null;
-    var descriptor = descriptorIn || (target ? Object.getOwnPropertyDescriptor(target, contextIn.name) : {});
-    var _, done = false;
-    for (var i = decorators.length - 1; i >= 0; i--) {
-        var context = {};
-        for (var p in contextIn) context[p] = p === "access" ? {} : contextIn[p];
-        for (var p in contextIn.access) context.access[p] = contextIn.access[p];
-        context.addInitializer = function (f) { if (done) throw new TypeError("Cannot add initializers after decoration has completed"); extraInitializers.push(accept(f || null)); };
-        var result = (0, decorators[i])(kind === "accessor" ? { get: descriptor.get, set: descriptor.set } : descriptor[key], context);
-        if (kind === "accessor") {
-            if (result === void 0) continue;
-            if (result === null || typeof result !== "object") throw new TypeError("Object expected");
-            if (_ = accept(result.get)) descriptor.get = _;
-            if (_ = accept(result.set)) descriptor.set = _;
-            if (_ = accept(result.init)) initializers.unshift(_);
-        }
-        else if (_ = accept(result)) {
-            if (kind === "field") initializers.unshift(_);
-            else descriptor[key] = _;
-        }
-    }
-    if (target) Object.defineProperty(target, contextIn.name, descriptor);
-    done = true;
-};
+import { generateBoard } from "../ai/board-broker.js";
+import { generateArenaBuild, arenaBuildPrompt, arenaReviewTraces } from '../ai/arena-broker.js';
+import { ARENA_DUEL_BUDGET, quoteArenaPlan } from '@dsh-gamecenter/protocol';
+import { summarizeCalls } from '../games/landlord-review.js';
+import { generateLandlordDecision } from '../ai/landlord-broker.js';
+import { createLandlordGame, applyLandlordAction, landlordSeatView, localLandlordDecision } from '../games/landlord-engine.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import dns from 'node:dns/promises';
+import { Buffer } from 'node:buffer';
+import { createHash, randomBytes } from 'node:crypto';
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol';
 import { REMOTE_NAMESPACE, SERVICE_KEY } from "../dsh-adapter/protocol.js";
 import { LeaseRegistry } from "../runtime/lease.js";
 import { readModelCatalog } from "../ai/model-catalog.js";
-import { validateCatalogInstallRequest, validateSaveLatestRequest, validateSaveCheckpointRequest, validateGameBundleFiles, validatePreviewBundleRequest, validateAbandonRuntimeRequest, decideCheckpointAdmission, isSafeBundlePath, bundleContentBytes, GAME_PREVIEW_LABEL, GAMECENTER_REMOTE_METHODS, isSaveIdShapeValid, isLaunchTokenShapeValid, LEASE_ACK_WINDOW_MS, } from '@dsh-gamecenter/protocol';
-import { listCatalog, prepareInstall, readInstalledBundle, } from '@dsh-gamecenter/catalog';
+import { resolveRunningVersions, validateCatalogInstallRequest, validateCatalogUninstallRequest, validateSaveLatestRequest, validateSaveCheckpointRequest, validateGameBundleFiles, validatePreviewBundleRequest, validateAbandonRuntimeRequest, validateMediaFetchRequest, validateAiGenerateRequest, decideCheckpointAdmission, isSafeBundlePath, isSafeRelativePath, bundleContentBytes, GAME_BUNDLE_MAX_FILE_BYTES, GAME_BUNDLE_MAX_TOTAL_BYTES, GAME_PREVIEW_LABEL, GAMECENTER_REMOTE_METHODS, isSaveIdShapeValid, isLaunchTokenShapeValid, LEASE_ACK_WINDOW_MS, evaluateCompatibility, sdkRangeAccepts, hasSaveCapability, MEDIA_MAX_BYTES, MEDIA_MAX_BYTES_PER_IMAGE, MEDIA_MAX_EDGE_PX, MEDIA_ALLOWED_MIMES, isAllowedMediaUrl, } from '@dsh-gamecenter/protocol';
+import { listCatalog, prepareInstall, readInstalledBundle, calculateManifestDigest, calculateBundleDigest, verifyManifestDigest, verifyBundleDigest, readOrCreateInstallId, RemoteReportClient, RemoteCatalogProvider, FileCatalogCacheStore, uninstallGamePackage, } from '@dsh-gamecenter/catalog';
+export { listCatalog, prepareInstall, uninstallGamePackage, readInstalledBundle, calculateManifestDigest, calculateBundleDigest, verifyManifestDigest, verifyBundleDigest, } from '@dsh-gamecenter/catalog';
+import { createResilientFetcher, describeFetchError } from './direct-http.js';
 import { SaveStore } from "../storage/save-store.js";
 import { SqliteSaveBackend } from "../storage/sqlite-save-backend.js";
 /**
@@ -216,13 +228,21 @@ export class GameCenterCore {
         const launchTokenDigest = this.deps.digestToken(input.launchToken);
         return this.registry.abandonRuntime(input.runtimeInstanceId, launchTokenDigest, this.deps.nowMs());
     }
-    saveAck(input) {
+    saveAck(input, manifest) {
         // **身份绑定**：先用调用方持有的运行凭证解析出租约，`gameId`/`saveId` 一律取自租约。
         const resolved = this.resolveRuntime(input.runtimeToken);
         if (!resolved.ok) {
             return { accepted: false, error: { code: resolved.code, message: resolved.message } };
         }
         const { lease } = resolved;
+        if (manifest !== undefined && manifest !== null && !hasSaveCapability(manifest)) {
+            return {
+                accepted: false,
+                state: lease.state,
+                lastPersistedRevision: lease.lastPersistedRevision,
+                error: { code: 'SAVE_UNSUPPORTED', message: '游戏未声明存档能力' },
+            };
+        }
         if (typeof input.gameId === 'string' && input.gameId !== lease.gameId) {
             return {
                 accepted: false,
@@ -354,87 +374,1143 @@ export class GameCenterCore {
 /** 被 `@Remote` 标记的公开方法名（完全对齐 protocol GAMECENTER_REMOTE_METHODS）。 */
 export const REMOTE_METHODS = GAMECENTER_REMOTE_METHODS;
 const Base = TypertRemoteService;
+export const DEFAULT_ALLOWED_MEDIA_HOSTS = [
+    'raw.githubusercontent.com',
+    'github.com',
+    'user-images.githubusercontent.com',
+    'avatars.githubusercontent.com',
+    'objects.githubusercontent.com',
+    'upload.wikimedia.org',
+    'cdn.akamai.steamstatic.com',
+    'shared.fastly.steamstatic.com',
+];
+export const DEFAULT_CATALOG_REPO = {
+    owner: 'salishChen',
+    repo: 'dsh-game-center-warehouse',
+};
+const ALLOWED_ARTIFACT_PATHS = [
+    'gamecenter.json',
+    'dist/index.html',
+    'dist/game.js',
+    'dist/style.css',
+];
+/**
+ * 单个产物的下载**总时限**（毫秒），可被 `options.timeoutMs` 覆盖。
+ *
+ * 只作兜底：真正的"卡住"由直连通道的空闲超时判定（见 `direct-http.ts`）。
+ * 15 秒的旧默认值对 14 MB 的包等于要求 0.94 MB/s 起步，慢链路必然失败。
+ */
+export const ARTIFACT_TOTAL_TIMEOUT_MS = 300_000;
+/** 官方产物主机；配置了 `rawBase` / `DSH_GAMECENTER_RAW_BASE` 时可换成可用镜像前缀。 */
+export const DEFAULT_RAW_BASE = 'https://raw.githubusercontent.com';
+/**
+ * 官方主机失败时给一句可执行的提示。
+ *
+ * 现场证据（2026-10-29）：`raw.githubusercontent.com` 在某些线路上 20 秒拿不到响应头，
+ * 这不是"超时太短"，调大超时也不会好，只能换主机。已在用镜像时不再重复提示。
+ */
+function rawBaseHint(rawBase) {
+    if (rawBase !== DEFAULT_RAW_BASE)
+        return '';
+    return '（若官方 raw 域名在本机线路不可达，可设置 DSH_GAMECENTER_RAW_BASE 走可用镜像）';
+}
+/**
+ * 归一化产物主机前缀（`rawBase`）。
+ *
+ * 背景（2026-10-29 实测）：`raw.githubusercontent.com` 在部分线路上**完全连不通**
+ * （20 秒拿不到响应头，换超时无用），而镜像前缀
+ * `https://ghfast.top/https://raw.githubusercontent.com` 13.7 秒下完 14 MB 且逐字节一致。
+ * 因此把主机做成配置项，默认仍走官方域名。
+ *
+ * 只接受 http/https、必须有主机名、不得携带用户名密码 —— 这个值来自本机配置，
+ * 但一旦被写坏就会变成任意 URL 拼装，所以仍然白名单式校验。
+ * 镜像**不被信任**：它只负责搬字节，`prepareInstall` 会在本地重算两个摘要，
+ * 内容被改一个字节就装不进去。
+ */
+export function normalizeRawBase(value) {
+    const raw = (value ?? '').trim();
+    if (raw === '')
+        return { ok: true, base: DEFAULT_RAW_BASE };
+    let parsed;
+    try {
+        parsed = new URL(raw);
+    }
+    catch {
+        return { ok: false, message: `产物主机前缀不是合法 URL: ${raw}` };
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+        return { ok: false, message: `产物主机前缀只允许 http/https: ${raw}` };
+    }
+    if (parsed.hostname === '') {
+        return { ok: false, message: `产物主机前缀缺少主机名: ${raw}` };
+    }
+    if (parsed.username !== '' || parsed.password !== '') {
+        return { ok: false, message: '产物主机前缀不允许携带用户名或密码' };
+    }
+    // 前缀镜像形如 `https://ghfast.top/https://raw.githubusercontent.com`，
+    // 其 pathname 本身含有目标 URL，因此这里只去掉尾部斜杠、按字符串拼接，
+    // 不用 `url.join()`（那会把 pathname 里的 `https:` 当成路径段处理）。
+    return { ok: true, base: raw.replace(/\/+$/, '') };
+}
+/**
+ * 限定源提交产物下载器 (Source Adapter)：
+ *
+ * 规则：
+ * 1. 严格要求 40 位小写十六进制 Git SHA，禁止使用 HEAD、分支名或标签；
+ * 2. 仅支持标准 GitHub HTTPS 仓库地址，构造 raw.githubusercontent.com 确定性源；
+ * 3. 严格受限文件白名单：仅允许 gamecenter.json 与 dist/ 下已知静态文件；严禁跨目录/绝对路径/.. 逃逸；
+ * 4. 流式边读边查单文件上限（GAME_BUNDLE_MAX_FILE_BYTES，30 MiB）与总量上限
+ *    （GAME_BUNDLE_MAX_TOTAL_BYTES，50 MiB），超限主动中断 reader 连接；
+ * 5. 超时分两层：单文件总时限默认 5 分钟（`ARTIFACT_TOTAL_TIMEOUT_MS`，慢链路兜底），
+ *    链路空闲由 `direct-http.ts` 的 socket 空闲超时（15s 无数据）判定并回退代理通道；
+ * 6. 只拉取静态文本/二进制，不执行任何脚本，产物交由 prepareInstall 进行权威摘要比对。
+ */
+/**
+ * 从传输类异常里取出 §11.8 结构化诊断（`attempts`/`phase`/`code`）。
+ * 没有 `attempts` 说明不是传输层给的错误（例如协议校验失败），返回 undefined —— 不编造。
+ */
+function transportDetailFrom(err) {
+    if (typeof err !== 'object' || err === null)
+        return undefined;
+    const source = err;
+    if (!Array.isArray(source.attempts) || source.attempts.length === 0)
+        return undefined;
+    const first = source.attempts[0];
+    const phase = typeof first?.phase === 'string' ? first.phase : source.phase;
+    return {
+        ...(typeof phase === 'string' ? { phase } : {}),
+        ...(typeof source.code === 'string' ? { code: source.code } : {}),
+        attempts: source.attempts,
+    };
+}
+export async function fetchCommitArtifacts(options) {
+    const { repository, commit } = options;
+    // 1. 强校验 commit 为 40 位十六进制 SHA，严禁 HEAD/分支名
+    if (typeof commit !== 'string' || !/^[0-9a-f]{40}$/.test(commit)) {
+        return {
+            ok: false,
+            errorCode: 'PROTOCOL_INVALID',
+            message: `commit 必须为 40 位小写十六进制 SHA，禁止使用分支名或 HEAD: ${commit}`,
+        };
+    }
+    // 2. 解析 GitHub 仓库
+    const match = /^https:\/\/github\.com\/([A-Za-z0-9._-]{1,100})\/([A-Za-z0-9._-]{1,100}?)(?:\.git)?\/?$/i.exec(repository.trim());
+    if (!match) {
+        return {
+            ok: false,
+            errorCode: 'PROTOCOL_INVALID',
+            message: `无法解析 GitHub 仓库地址: ${repository}`,
+        };
+    }
+    const owner = match[1];
+    const repo = match[2];
+    const rawBaseResult = normalizeRawBase(options.rawBase ?? process.env.DSH_GAMECENTER_RAW_BASE);
+    if (!rawBaseResult.ok) {
+        return { ok: false, errorCode: 'PROTOCOL_INVALID', message: rawBaseResult.message };
+    }
+    const rawBase = rawBaseResult.base;
+    const fetcher = options.fetcher ?? ((url, init) => fetch(url, init));
+    // 【超时语义 · 2026-10-29】默认值曾是 15_000，被真实事故打脸：
+    // 大体积游戏包的 `dist/game.js` 曾达 14.16 MB，15 秒等于要求链路稳定跑满 ≥0.94 MB/s，
+    // 跨公网到 raw.githubusercontent.com 必然踩线，用户看到的就是
+    // `拉取文件超时 (15000ms): dist/game.js`。
+    // 现在这里只是**单文件总时限兜底**（5 分钟），真正判定"卡住"的是直连通道的
+    // **空闲超时**（`direct-http.ts` 的 DEFAULT_TIMEOUT_MS=15s，socket 上没数据才触发），
+    // 所以"慢但一直在收"的下载不会被误杀。
+    const timeoutMs = options.timeoutMs ?? ARTIFACT_TOTAL_TIMEOUT_MS;
+    // 【体积上限唯一真源 · 2026-10-27】不再各自写字面量：下载/安装两处曾分叉成 32 MiB / 30 MiB，
+    // 同一个包在不同层得到不同上限和不同报错文案，排查时对不上账。现在一律引用 protocol 常量。
+    const maxSingle = options.maxSingleFileBytes ?? GAME_BUNDLE_MAX_FILE_BYTES;
+    const maxTotal = options.maxTotalBytes ?? GAME_BUNDLE_MAX_TOTAL_BYTES;
+    const headers = {};
+    if (options.token) {
+        headers['Authorization'] = `token ${options.token}`;
+    }
+    let totalBytesAccumulated = 0;
+    const allowedArtifactPaths = new Set(ALLOWED_ARTIFACT_PATHS);
+    async function fetchFile(relativePath, isOptional = false) {
+        // 白名单与路径安全校验
+        if (!allowedArtifactPaths.has(relativePath)) {
+            return {
+                ok: false,
+                errorCode: 'PROTOCOL_INVALID',
+                message: `禁止请求非白名单产物路径: ${relativePath}`,
+            };
+        }
+        if (!isSafeRelativePath(relativePath)) {
+            return {
+                ok: false,
+                errorCode: 'PROTOCOL_INVALID',
+                message: `非法相对路径: ${relativePath}`,
+            };
+        }
+        const url = `${rawBase}/${owner}/${repo}/${commit}/${relativePath}`;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        let res;
+        try {
+            // 防御性竞速：即使注入的 fetcher 忽略 `signal`（历史缺陷，`direct-http` 曾完全不看它），
+            // 总时限也必须能真正结束这一趟。否则"到点了但 await 永远不返回"，用户界面就一直转圈。
+            const aborted = new Promise((_, rejectAborted) => {
+                controller.signal.addEventListener('abort', () => {
+                    const err = new Error(`已超过单文件总时限 ${timeoutMs}ms`);
+                    err.name = 'TimeoutError';
+                    rejectAborted(err);
+                }, { once: true });
+            });
+            res = await Promise.race([
+                fetcher(url, {
+                    method: 'GET',
+                    headers,
+                    signal: controller.signal,
+                }),
+                aborted,
+            ]);
+        }
+        catch (err) {
+            clearTimeout(timer);
+            const detail = err instanceof Error ? err.message : String(err);
+            // 传输类失败带上结构化诊断；内容/协议类失败不带（别把两类混成一个字段）。
+            const transportDetail = transportDetailFrom(err);
+            if (controller.signal.aborted) {
+                return {
+                    ok: false,
+                    errorCode: 'PROTOCOL_INVALID',
+                    message: `拉取文件超过总时限 (${timeoutMs}ms): ${relativePath}（链路太慢或中途卡住，可重试）${rawBaseHint(rawBase)}`,
+                    detail: transportDetail,
+                };
+            }
+            // 分层文案：链路长时间无数据（内层 socket 空闲超时）与真正的网络异常要分开，
+            // 否则"慢"和"断"永远混在一句"超时"里，用户和排查的人都只能猜。
+            if (err instanceof Error && err.name === 'AbortError') {
+                return {
+                    ok: false,
+                    errorCode: 'PROTOCOL_INVALID',
+                    message: `拉取文件被取消: ${relativePath}：${detail}`,
+                    detail: transportDetail,
+                };
+            }
+            if (/空闲超时|timed?\s?out|ETIMEDOUT/i.test(detail)) {
+                return {
+                    ok: false,
+                    errorCode: 'PROTOCOL_INVALID',
+                    message: `拉取文件超时（链路长时间无数据）: ${relativePath}：${detail}${rawBaseHint(rawBase)}`,
+                    detail: transportDetail,
+                };
+            }
+            return {
+                ok: false,
+                errorCode: 'PROTOCOL_INVALID',
+                message: `拉取文件网络异常: ${detail}`,
+            };
+        }
+        clearTimeout(timer);
+        if (!res.ok) {
+            if (isOptional && res.status === 404) {
+                return { ok: true, notFound: true };
+            }
+            return {
+                ok: false,
+                errorCode: 'PROTOCOL_INVALID',
+                message: `拉取文件失败 (HTTP ${res.status}): ${url}`,
+            };
+        }
+        // 流式读取与体积截断保护
+        try {
+            if (res.body && typeof res.body.getReader === 'function') {
+                const reader = res.body.getReader();
+                const chunks = [];
+                let fileBytes = 0;
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done)
+                        break;
+                    if (value) {
+                        const chunk = value;
+                        fileBytes += chunk.byteLength;
+                        if (fileBytes > maxSingle) {
+                            await reader.cancel();
+                            return {
+                                ok: false,
+                                errorCode: 'PROTOCOL_INVALID',
+                                message: `文件 ${relativePath} 超过单文件上限 (${maxSingle} 字节)`,
+                            };
+                        }
+                        if (totalBytesAccumulated + fileBytes > maxTotal) {
+                            await reader.cancel();
+                            return {
+                                ok: false,
+                                errorCode: 'PROTOCOL_INVALID',
+                                message: `产物总量超过上限 (${maxTotal} 字节)`,
+                            };
+                        }
+                        chunks.push(chunk);
+                    }
+                }
+                totalBytesAccumulated += fileBytes;
+                return { ok: true, content: Buffer.concat(chunks) };
+            }
+            else {
+                const ab = await res.arrayBuffer();
+                if (ab.byteLength > maxSingle) {
+                    return {
+                        ok: false,
+                        errorCode: 'PROTOCOL_INVALID',
+                        message: `文件 ${relativePath} 超过单文件上限 (${maxSingle} 字节)`,
+                    };
+                }
+                if (totalBytesAccumulated + ab.byteLength > maxTotal) {
+                    return {
+                        ok: false,
+                        errorCode: 'PROTOCOL_INVALID',
+                        message: `产物总量超过上限 (${maxTotal} 字节)`,
+                    };
+                }
+                totalBytesAccumulated += ab.byteLength;
+                return { ok: true, content: Buffer.from(new Uint8Array(ab)) };
+            }
+        }
+        catch (err) {
+            return {
+                ok: false,
+                errorCode: 'PROTOCOL_INVALID',
+                message: `读取文件流失败: ${err instanceof Error ? err.message : String(err)}`,
+            };
+        }
+    }
+    // 1. 拉取 gamecenter.json
+    const manifestRes = await fetchFile('gamecenter.json', false);
+    if (!manifestRes.ok || !manifestRes.content) {
+        return {
+            ok: false,
+            errorCode: manifestRes.errorCode ?? 'PROTOCOL_INVALID',
+            message: manifestRes.message ?? '拉取 gamecenter.json 失败',
+        };
+    }
+    const manifestContent = manifestRes.content.toString('utf-8');
+    // 解析并校验 manifest 布局
+    let manifestObj;
+    try {
+        manifestObj = JSON.parse(manifestContent);
+    }
+    catch (err) {
+        return {
+            ok: false,
+            errorCode: 'PROTOCOL_INVALID',
+            message: `gamecenter.json 不是合法的 JSON: ${err instanceof Error ? err.message : String(err)}`,
+        };
+    }
+    if (!manifestObj || typeof manifestObj !== 'object' || manifestObj.schemaVersion !== 1) {
+        return {
+            ok: false,
+            errorCode: 'PROTOCOL_INVALID',
+            message: `gamecenter.json schemaVersion 必须为 1`,
+        };
+    }
+    const declaredEntry = manifestObj.runtime?.entry ?? 'dist/index.html';
+    if (declaredEntry !== 'dist/index.html') {
+        return {
+            ok: false,
+            errorCode: 'PROTOCOL_INVALID',
+            message: `未知或不受支持的入口路径: ${declaredEntry}，仅允许 dist/index.html`,
+        };
+    }
+    // 2. 拉取必选产物：dist/index.html 与 dist/game.js
+    const files = [];
+    const requiredPaths = ['dist/index.html', 'dist/game.js'];
+    for (const filePath of requiredPaths) {
+        const fRes = await fetchFile(filePath, false);
+        if (!fRes.ok || !fRes.content) {
+            return {
+                ok: false,
+                errorCode: fRes.errorCode ?? 'PROTOCOL_INVALID',
+                message: fRes.message ?? `拉取必选产物 ${filePath} 失败`,
+            };
+        }
+        files.push({ path: filePath, content: fRes.content });
+    }
+    // 3. 探测拉取可选产物：dist/style.css
+    const styleRes = await fetchFile('dist/style.css', true);
+    if (!styleRes.ok) {
+        return {
+            ok: false,
+            errorCode: styleRes.errorCode ?? 'PROTOCOL_INVALID',
+            message: styleRes.message ?? '拉取 dist/style.css 失败',
+        };
+    }
+    if (styleRes.content && !styleRes.notFound) {
+        files.push({ path: 'dist/style.css', content: styleRes.content });
+    }
+    // Offline runtimes/assets are declared by local script tags in the pinned entry.
+    // Every dependency remains inside dist/, subject to count/size and final digest checks.
+    const indexHtml = files.find(f => f.path === 'dist/index.html').content.toString();
+    const dependencies = new Set();
+    for (const match of indexHtml.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
+        const relative = match[1].replace(/^\.\//, '');
+        const filePath = 'dist/' + relative;
+        if (!isSafeBundlePath(filePath) || !relative.endsWith('.js'))
+            return { ok: false, errorCode: 'PROTOCOL_INVALID', message: '入口含不安全的脚本依赖' };
+        if (!requiredPaths.some(p => p === filePath))
+            dependencies.add(filePath);
+    }
+    if (dependencies.size + files.length + 1 > 64)
+        return { ok: false, errorCode: 'PROTOCOL_INVALID', message: '游戏依赖文件数量超限' };
+    for (const filePath of dependencies) {
+        allowedArtifactPaths.add(filePath);
+        const result = await fetchFile(filePath, false);
+        if (!result.ok || !result.content)
+            return { ok: false, errorCode: result.errorCode ?? 'PROTOCOL_INVALID', message: result.message ?? '缺少游戏依赖 ' + filePath };
+        files.push({ path: filePath, content: result.content });
+    }
+    return {
+        ok: true,
+        bundledSource: {
+            manifestContent,
+            files,
+        },
+    };
+}
+/**
+ * §11.9 开关的取值口径。
+ *
+ * 只认 `1` 会让 `true`/`yes` 变成**静默不生效**：设了、重启了、验收清单也勾了，
+ * 而插件仍按关闭运行 —— 与"动作做了、作用对象不对"是同一类假通过。
+ * 这里接受常见真值写法，其余一律视为关闭（未知值不该被猜成开启）。
+ */
+/**
+ * @internal 仅供探针读取，非对外 API（见 `.botharness/report-flag-probe/probe.mjs`）。
+ *
+ * 导出是为了让第 ③ 步验的是**编译产物里的真实解析**，而不是脚本里复刻一遍逻辑。
+ * 它不经 `packages/dsh-gamecenter/src/index.ts` 再导出，因此不在插件公开面上；
+ * 请勿从 index 导出它，也不要把它当成配置读取入口。
+ */
+export function readReportDownloadFailEnv() {
+    const raw = process.env.DSH_GAMECENTER_REPORT_DOWNLOAD_FAIL;
+    if (typeof raw !== 'string')
+        return false;
+    return /^(?:1|true|yes|on)$/i.test(raw.trim());
+}
+export function isPrivateOrLoopbackIp(ip) {
+    if (ip === '::1' || ip === 'localhost')
+        return true;
+    const parts = ip.split('.').map(Number);
+    if (parts.length === 4 && parts.every((p) => Number.isInteger(p) && p >= 0 && p <= 255)) {
+        const p0 = parts[0];
+        const p1 = parts[1];
+        if (p0 === 127)
+            return true;
+        if (p0 === 10)
+            return true;
+        if (p0 === 192 && p1 === 168)
+            return true;
+        if (p0 === 172 && p1 >= 16 && p1 <= 31)
+            return true;
+        if (p0 === 169 && p1 === 254)
+            return true;
+        if (p0 === 0)
+            return true;
+        return false;
+    }
+    const lower = ip.toLowerCase();
+    if (lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80'))
+        return true;
+    return false;
+}
 /**
  * 核心方法装配为 Typert Remote 服务类。
  *
  * 使用 TypeScript 标准装饰器（Stage 3）@Remote 标记公开端点。
  * 运行时由 Gateway 的 collectSrcClaims() 扫描原型方法并在 /api/gameCenter/* 认领端点。
  */
+function matchesImageMagicBytes(buf, mime) {
+    if (mime === 'image/png') {
+        return (buf.length >= 8 &&
+            buf[0] === 0x89 &&
+            buf[1] === 0x50 &&
+            buf[2] === 0x4e &&
+            buf[3] === 0x47 &&
+            buf[4] === 0x0d &&
+            buf[5] === 0x0a &&
+            buf[6] === 0x1a &&
+            buf[7] === 0x0a);
+    }
+    if (mime === 'image/jpeg') {
+        return buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+    }
+    if (mime === 'image/gif') {
+        return (buf.length >= 6 &&
+            buf[0] === 0x47 &&
+            buf[1] === 0x49 &&
+            buf[2] === 0x46 &&
+            buf[3] === 0x38 &&
+            (buf[4] === 0x37 || buf[4] === 0x39) &&
+            buf[5] === 0x61);
+    }
+    if (mime === 'image/webp') {
+        return (buf.length >= 12 &&
+            buf[0] === 0x52 &&
+            buf[1] === 0x49 &&
+            buf[2] === 0x46 &&
+            buf[3] === 0x46 &&
+            buf[8] === 0x57 &&
+            buf[9] === 0x45 &&
+            buf[10] === 0x42 &&
+            buf[11] === 0x50);
+    }
+    return false;
+}
+function parseImageDimensions(buf, mime) {
+    if (mime === 'image/png') {
+        if (buf.length >= 24 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+            const width = buf.readUInt32BE(16);
+            const height = buf.readUInt32BE(20);
+            return { width, height };
+        }
+    }
+    else if (mime === 'image/gif') {
+        if (buf.length >= 10 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) {
+            const width = buf.readUInt16LE(6);
+            const height = buf.readUInt16LE(8);
+            return { width, height };
+        }
+    }
+    else if (mime === 'image/jpeg') {
+        let offset = 2;
+        while (offset + 4 < buf.length) {
+            if (buf[offset] !== 0xff)
+                break;
+            const marker = buf[offset + 1];
+            if (marker === 0xd9 || marker === 0xda)
+                break;
+            const len = buf.readUInt16BE(offset + 2);
+            if ([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(marker)) {
+                if (offset + 9 <= buf.length) {
+                    const height = buf.readUInt16BE(offset + 5);
+                    const width = buf.readUInt16BE(offset + 7);
+                    return { width, height };
+                }
+            }
+            offset += 2 + len;
+        }
+    }
+    else if (mime === 'image/webp') {
+        if (buf.length >= 30 && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) {
+            const f0 = buf[12], f1 = buf[13], f2 = buf[14], f3 = buf[15];
+            // VP8X
+            if (f0 === 0x56 && f1 === 0x50 && f2 === 0x38 && f3 === 0x58 && buf.length >= 30) {
+                const width = 1 + buf[24] + (buf[25] << 8) + (buf[26] << 16);
+                const height = 1 + buf[27] + (buf[28] << 8) + (buf[29] << 16);
+                return { width, height };
+            }
+            // VP8
+            if (f0 === 0x56 && f1 === 0x50 && f2 === 0x38 && f3 === 0x20 && buf.length >= 30) {
+                if (buf[23] === 0x9d && buf[24] === 0x01 && buf[25] === 0x2a) {
+                    const width = buf.readUInt16LE(26) & 0x3fff;
+                    const height = buf.readUInt16LE(28) & 0x3fff;
+                    return { width, height };
+                }
+            }
+            // VP8L
+            if (f0 === 0x56 && f1 === 0x50 && f2 === 0x38 && f3 === 0x4c && buf.length >= 25 && buf[20] === 0x2f) {
+                const b1 = buf[21], b2 = buf[22], b3 = buf[23], b4 = buf[24];
+                const width = 1 + (((b2 & 0x3f) << 8) | b1);
+                const height = 1 + (((b4 & 0xf) << 10) | (b3 << 2) | ((b2 & 0xc0) >> 6));
+                return { width, height };
+            }
+        }
+    }
+    return null;
+}
 let GameCenterService = (() => {
     let _classSuper = Base;
     let _instanceExtraInitializers = [];
+    let _walletStatus_decorators;
+    let _walletAction_decorators;
     let _handshake_decorators;
+    let _arenaAction_decorators;
+    let _setAiBinding_decorators;
+    let _landlordAction_decorators;
+    let _suspendRuntime_decorators;
+    let _resumeRuntime_decorators;
+    let _cancelAi_decorators;
     let _saveAck_decorators;
     let _pause_decorators;
     let _leaseStatus_decorators;
     let _modelCatalog_decorators;
     let _catalogList_decorators;
     let _catalogInstall_decorators;
+    let _catalogUninstall_decorators;
     let _gameBundle_decorators;
     let _saveLatest_decorators;
     let _saveCheckpoint_decorators;
     let _previewList_decorators;
     let _previewBundle_decorators;
     let _abandonRuntime_decorators;
+    let _mediaFetch_decorators;
+    let _aiGenerate_decorators;
     return class GameCenterService extends _classSuper {
         static {
             const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : void 0;
+            _walletStatus_decorators = [Remote];
+            _walletAction_decorators = [Remote];
             _handshake_decorators = [Remote];
+            _arenaAction_decorators = [Remote];
+            _setAiBinding_decorators = [Remote];
+            _landlordAction_decorators = [Remote];
+            _suspendRuntime_decorators = [Remote];
+            _resumeRuntime_decorators = [Remote];
+            _cancelAi_decorators = [Remote];
             _saveAck_decorators = [Remote];
             _pause_decorators = [Remote];
             _leaseStatus_decorators = [Remote];
             _modelCatalog_decorators = [Remote];
             _catalogList_decorators = [Remote];
             _catalogInstall_decorators = [Remote];
+            _catalogUninstall_decorators = [Remote];
             _gameBundle_decorators = [Remote];
             _saveLatest_decorators = [Remote];
             _saveCheckpoint_decorators = [Remote];
             _previewList_decorators = [Remote];
             _previewBundle_decorators = [Remote];
             _abandonRuntime_decorators = [Remote];
+            _mediaFetch_decorators = [Remote];
+            _aiGenerate_decorators = [Remote];
+            __esDecorate(this, null, _walletStatus_decorators, { kind: "method", name: "walletStatus", static: false, private: false, access: { has: obj => "walletStatus" in obj, get: obj => obj.walletStatus }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _walletAction_decorators, { kind: "method", name: "walletAction", static: false, private: false, access: { has: obj => "walletAction" in obj, get: obj => obj.walletAction }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _handshake_decorators, { kind: "method", name: "handshake", static: false, private: false, access: { has: obj => "handshake" in obj, get: obj => obj.handshake }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _arenaAction_decorators, { kind: "method", name: "arenaAction", static: false, private: false, access: { has: obj => "arenaAction" in obj, get: obj => obj.arenaAction }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _setAiBinding_decorators, { kind: "method", name: "setAiBinding", static: false, private: false, access: { has: obj => "setAiBinding" in obj, get: obj => obj.setAiBinding }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _landlordAction_decorators, { kind: "method", name: "landlordAction", static: false, private: false, access: { has: obj => "landlordAction" in obj, get: obj => obj.landlordAction }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _suspendRuntime_decorators, { kind: "method", name: "suspendRuntime", static: false, private: false, access: { has: obj => "suspendRuntime" in obj, get: obj => obj.suspendRuntime }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _resumeRuntime_decorators, { kind: "method", name: "resumeRuntime", static: false, private: false, access: { has: obj => "resumeRuntime" in obj, get: obj => obj.resumeRuntime }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _cancelAi_decorators, { kind: "method", name: "cancelAi", static: false, private: false, access: { has: obj => "cancelAi" in obj, get: obj => obj.cancelAi }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _saveAck_decorators, { kind: "method", name: "saveAck", static: false, private: false, access: { has: obj => "saveAck" in obj, get: obj => obj.saveAck }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _pause_decorators, { kind: "method", name: "pause", static: false, private: false, access: { has: obj => "pause" in obj, get: obj => obj.pause }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _leaseStatus_decorators, { kind: "method", name: "leaseStatus", static: false, private: false, access: { has: obj => "leaseStatus" in obj, get: obj => obj.leaseStatus }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _modelCatalog_decorators, { kind: "method", name: "modelCatalog", static: false, private: false, access: { has: obj => "modelCatalog" in obj, get: obj => obj.modelCatalog }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _catalogList_decorators, { kind: "method", name: "catalogList", static: false, private: false, access: { has: obj => "catalogList" in obj, get: obj => obj.catalogList }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _catalogInstall_decorators, { kind: "method", name: "catalogInstall", static: false, private: false, access: { has: obj => "catalogInstall" in obj, get: obj => obj.catalogInstall }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _catalogUninstall_decorators, { kind: "method", name: "catalogUninstall", static: false, private: false, access: { has: obj => "catalogUninstall" in obj, get: obj => obj.catalogUninstall }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _gameBundle_decorators, { kind: "method", name: "gameBundle", static: false, private: false, access: { has: obj => "gameBundle" in obj, get: obj => obj.gameBundle }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _saveLatest_decorators, { kind: "method", name: "saveLatest", static: false, private: false, access: { has: obj => "saveLatest" in obj, get: obj => obj.saveLatest }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _saveCheckpoint_decorators, { kind: "method", name: "saveCheckpoint", static: false, private: false, access: { has: obj => "saveCheckpoint" in obj, get: obj => obj.saveCheckpoint }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _previewList_decorators, { kind: "method", name: "previewList", static: false, private: false, access: { has: obj => "previewList" in obj, get: obj => obj.previewList }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _previewBundle_decorators, { kind: "method", name: "previewBundle", static: false, private: false, access: { has: obj => "previewBundle" in obj, get: obj => obj.previewBundle }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _abandonRuntime_decorators, { kind: "method", name: "abandonRuntime", static: false, private: false, access: { has: obj => "abandonRuntime" in obj, get: obj => obj.abandonRuntime }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _mediaFetch_decorators, { kind: "method", name: "mediaFetch", static: false, private: false, access: { has: obj => "mediaFetch" in obj, get: obj => obj.mediaFetch }, metadata: _metadata }, null, _instanceExtraInitializers);
+            __esDecorate(this, null, _aiGenerate_decorators, { kind: "method", name: "aiGenerate", static: false, private: false, access: { has: obj => "aiGenerate" in obj, get: obj => obj.aiGenerate }, metadata: _metadata }, null, _instanceExtraInitializers);
             if (_metadata) Object.defineProperty(this, Symbol.metadata, { enumerable: true, configurable: true, writable: true, value: _metadata });
         }
         core = __runInitializers(this, _instanceExtraInitializers);
         hostCtx;
         playerId;
+        startWalletHistory;
+        wallet;
         saveStore;
         gameLibraryDir;
         previewDir;
         approvals;
         catalogMode;
         catalogFixtureEntries;
+        runningVersions;
+        dshObservation;
+        gameCenterObservation;
+        allowedMediaHosts;
+        mediaFetcher;
+        dnsLookup;
+        mediaSecurityVerified;
+        catalogRepo;
+        catalogGithubToken;
+        catalogFetcher;
+        manifestResolver;
+        aiBroker;
+        catalogBaseUrl;
+        rawBaseUrl;
+        reportDownloadFailures;
+        installId;
+        reportClientPromise;
+        remoteCatalogProvider;
+        /**
+         * 后台/制品下载专用 fetcher：**先直连**（`node:http`/`node:https`，不读代理环境变量），
+         * 直连不通才回退到全局 `fetch`（那条会套 `HTTP_PROXY`）。原因见 `remote/direct-http.ts`
+         * 文件头：`NO_PROXY` 里的 CIDR 不被 undici 解析，内网后台曾被推给死代理，
+         * `fetch failed` 又被吞成「未找到审批记录」。
+         */
+        resilientFetcher = createResilientFetcher();
+        aiBindings = new Map();
+        landlordTables = new Map();
+        arenaModes = new Map();
+        arenaModeOperations = new Map();
+        runtimeTargets = new Map();
+        aiOperations = new Map();
+        inFlightAiOperations = new Map();
+        inFlightAiByRuntimeInstance = new Map();
+        abortInFlightAi(runtimeInstanceId, reason = 'RUNTIME_ABORTED') {
+            const set = this.inFlightAiByRuntimeInstance.get(runtimeInstanceId);
+            if (!set)
+                return;
+            for (const controller of set) {
+                try {
+                    controller.abort(new Error(reason));
+                }
+                catch {
+                    // ignore
+                }
+            }
+            set.clear();
+            this.inFlightAiByRuntimeInstance.delete(runtimeInstanceId);
+        }
         constructor(ctx, core, options) {
             super(ctx, SERVICE_KEY, { namespace: REMOTE_NAMESPACE });
             this.core = core;
             this.hostCtx = ctx;
             this.playerId = options.playerId;
+            this.wallet = options.wallet ?? new WhaleWallet(':memory:', options.playerId);
             this.saveStore = options.saveStore;
             this.gameLibraryDir = options.gameLibraryDir;
             this.previewDir = options.previewDir;
-            this.approvals = options.approvals ?? [];
-            this.catalogMode = options.catalogMode ?? 'fixture';
+            this.approvals = options.approvals ? [...options.approvals] : [];
+            this.catalogMode = options.catalogMode ?? (Boolean(options.catalogBaseUrl) || process.env.DSH_GAMECENTER_BACKEND_URL || true ? 'remote' : 'github');
             this.catalogFixtureEntries = options.catalogFixtureEntries ?? [];
+            this.catalogRepo = options.catalogRepo ?? DEFAULT_CATALOG_REPO;
+            this.catalogGithubToken = options.catalogGithubToken;
+            this.catalogFetcher = options.catalogFetcher;
+            this.manifestResolver = options.manifestResolver;
+            this.aiBroker = options.aiBroker;
+            this.runningVersions = options.runningVersions;
+            this.dshObservation = options.dshObservation;
+            this.gameCenterObservation = options.gameCenterObservation;
+            this.allowedMediaHosts = options.allowedMediaHosts ?? DEFAULT_ALLOWED_MEDIA_HOSTS;
+            this.mediaFetcher = options.mediaFetcher;
+            this.dnsLookup = options.dnsLookup;
+            this.mediaSecurityVerified = options.mediaSecurityVerified ?? false;
+            this.catalogBaseUrl = options.catalogBaseUrl;
+            this.rawBaseUrl = options.rawBaseUrl;
+            this.reportDownloadFailures = options.reportDownloadFailures ?? readReportDownloadFailEnv();
+            this.installId = options.installId;
+        }
+        /**
+         * 懒初始化上报客户端：endpoint 为空 → `undefined`，远端目录与上报整体静默。
+         * `installId` 首次启用时生成并本地持久化；用户看不到，也不进 UI/iframe。
+         */
+        getReportClient() {
+            const baseUrl = this.catalogBaseUrl;
+            if (!baseUrl)
+                return Promise.resolve(undefined);
+            if (!this.reportClientPromise) {
+                this.reportClientPromise = (async () => {
+                    const installId = this.installId ?? (await readOrCreateInstallId(path.join(this.gameLibraryDir, '.install-id')));
+                    return new RemoteReportClient({
+                        baseUrl,
+                        installId,
+                        client: 'dsh-gamecenter',
+                        // 上报打到同一个内网后台，同样不能交给环境代理。
+                        fetcher: this.catalogFetcher ?? this.resilientFetcher,
+                    });
+                })();
+            }
+            return this.reportClientPromise;
+        }
+        walletStatus(input) {
+            this.startWalletHistory?.();
+            return { ok: true, wallet: this.wallet.status() };
+        }
+        async walletAction(input) {
+            if (!input || typeof input !== 'object' || Object.keys(input).some(k => !['runtimeToken', 'action', 'operationId', 'expectedRevision', 'amount', 'state'].includes(k)))
+                return { ok: false, errorCode: 'PROTOCOL_INVALID', message: '钱包请求字段不合法' };
+            const resolved = this.core.resolveRuntime(input.runtimeToken);
+            if (!resolved.ok)
+                return { ok: false, errorCode: resolved.code, message: resolved.message };
+            const lease = resolved.lease;
+            if (!hasWhaleWallet(lease.gameId) || lease.state !== 'running' || lease.sealed)
+                return { ok: false, errorCode: 'STALE_RUNTIME', message: '钱包仅允许已开通兑换的运行中游戏访问' };
+            const manifest = await this.runtimeManifest(lease), current = this.core.resolveRuntime(input.runtimeToken);
+            if (manifest?.id !== lease.gameId || !current.ok || current.lease !== lease || lease.state !== 'running' || lease.sealed)
+                return { ok: false, errorCode: 'STALE_RUNTIME', message: '游戏资源或会话失效' };
+            if (this.arenaModes.get(lease.runtimeInstanceId)?.mode === 'duel' && input.action !== 'status')
+                return { ok: false, errorCode: 'CAPABILITY_UNAVAILABLE', message: 'AI 对战金币不能充值或写入冒险存档' };
+            this.startWalletHistory?.();
+            try {
+                return this.wallet.command(input, lease.gameId);
+            }
+            catch (e) {
+                return { ok: false, errorCode: 'PROTOCOL_INVALID', message: e instanceof Error ? e.message : '钱包操作失败' };
+            }
         }
         handshake(input) {
-            return this.core.handshake(input);
+            if (input?.commit !== undefined) {
+                if (!/^[a-f0-9]{40}$/.test(input.commit)) {
+                    return { ok: false, errorCode: 'PROTOCOL_INVALID', message: '非法 commit' };
+                }
+                let hasApproval = this.approvals.some(a => a.gameId === input.gameId && a.commit === input.commit);
+                if (!hasApproval && this.gameLibraryDir) {
+                    try {
+                        const metaPath = path.join(this.gameLibraryDir, input.gameId, input.commit, '.dsh-installed.json');
+                        if (fs.existsSync(metaPath)) {
+                            const raw = fs.readFileSync(metaPath, 'utf-8');
+                            const meta = JSON.parse(raw);
+                            if (meta.gameId === input.gameId && meta.commit === input.commit && meta.manifestDigest && meta.bundleDigest) {
+                                const approval = {
+                                    gameId: meta.gameId,
+                                    commit: meta.commit,
+                                    repository: meta.repository || '',
+                                    manifestDigest: meta.manifestDigest,
+                                    bundleDigest: meta.bundleDigest,
+                                    approvedAt: meta.installedAt || new Date().toISOString(),
+                                    approvedBy: 'installed-record',
+                                    approvalRecordPath: meta.approvalRecordPath || `installed://${meta.gameId}/${meta.commit}`,
+                                };
+                                this.approvals.push(approval);
+                                hasApproval = true;
+                            }
+                        }
+                    }
+                    catch {
+                        // ignore
+                    }
+                }
+                if (!hasApproval) {
+                    return { ok: false, errorCode: 'UNAPPROVED_RELEASE', message: '运行提交未审批' };
+                }
+            }
+            if (input?.previewId !== undefined && (!this.previewDir || !isSafeRelativePath(input.previewId) || /[\\/]/.test(input.previewId) || input.commit !== undefined)) {
+                return { ok: false, errorCode: 'PROTOCOL_INVALID', message: '非法预览目标' };
+            }
+            const result = this.core.handshake(input);
+            if (result.ok)
+                this.runtimeTargets.set(input.runtimeInstanceId, {
+                    ...(input.commit === undefined ? {} : { commit: input.commit }),
+                    ...(input.previewId === undefined ? {} : { previewId: input.previewId }),
+                });
+            return result;
         }
-        saveAck(input) {
+        async runtimeManifest(lease) {
+            const target = this.runtimeTargets.get(lease.runtimeInstanceId);
+            if (target?.previewId && this.previewDir) {
+                try {
+                    const manifest = JSON.parse(await fs.promises.readFile(path.join(this.previewDir, target.previewId, 'gamecenter.json'), 'utf8'));
+                    return manifest.id === lease.gameId && manifest.schemaVersion === 1 ? manifest : null;
+                }
+                catch {
+                    return null;
+                }
+            }
+            return this.resolveGameManifest(lease.gameId, target?.commit);
+        }
+        async arenaAction(input) {
+            const fail = (message, errorCode = 'PROTOCOL_INVALID') => ({ ok: false, errorCode, message });
+            if (!input || Object.keys(input).some(k => !['runtimeToken', 'action', 'operationId', 'mode', 'roundId', 'loadout', 'result'].includes(k)) || !['mode', 'reset', 'state', 'review', 'lock', 'finish', 'next'].includes(input.action) || typeof input.operationId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(input.operationId) ||
+                (input.action === 'mode' ? !['adventure', 'duel'].includes(input.mode) : input.mode !== undefined) || input.action !== 'lock' && input.loadout !== undefined || input.action !== 'finish' && input.result !== undefined || !['lock', 'finish', 'next'].includes(input.action) && input.roundId !== undefined)
+                return fail('模式命令不合法');
+            if (input.action === 'finish') {
+                const value = input.result;
+                if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(k => !['winner', 'durationMs'].includes(k)) || !['player', 'ai', 'draw'].includes(value.winner) || !Number.isInteger(value.durationMs) || value.durationMs <= 0 || value.durationMs > 47000)
+                    return fail('比赛结果不合法');
+            }
+            const resolved = this.core.resolveRuntime(input.runtimeToken);
+            if (!resolved.ok)
+                return fail(resolved.message, resolved.code);
+            const lease = resolved.lease, id = lease.runtimeInstanceId;
+            if (lease.gameId !== 'example.cat-arena' || lease.state !== 'running' || lease.sealed)
+                return fail('战车实例未运行', 'STALE_RUNTIME');
+            const manifest = await this.runtimeManifest(lease), current = this.core.resolveRuntime(input.runtimeToken);
+            if (manifest?.id !== 'example.cat-arena' || !current.ok || current.lease !== lease || lease.state !== 'running' || lease.sealed)
+                return fail('战车资源或会话失效', 'STALE_RUNTIME');
+            if (input.mode === 'duel' && !manifest.ai?.slots?.vehicleBuild)
+                return fail('该版本未声明 AI 组装能力', 'CAPABILITY_UNAVAILABLE');
+            let table = this.arenaModes.get(id);
+            const key = id + '\0' + input.operationId, serialized = JSON.stringify({ action: input.action, mode: input.mode, roundId: input.roundId, loadout: input.loadout, result: input.result }), prior = this.arenaModeOperations.get(key);
+            if (prior) {
+                if (prior.input !== serialized)
+                    return fail('操作编号不能更换内容');
+                return prior.result.ok && prior.result.roundId === table?.roundId ? prior.result : fail('操作所属对局已结束', 'STALE_RUNTIME');
+            }
+            if (['lock', 'finish', 'next'].includes(input.action) && (table?.mode !== 'duel' || input.roundId !== table.roundId))
+                return fail('对局已变化', 'STALE_RUNTIME');
+            if (input.action === 'next') {
+                if (!table?.result || !table.planJson || !table.aiPlan)
+                    return fail('请先完成并确认本轮比赛');
+                const previousRound = { playerPlan: JSON.parse(table.planJson), aiPlan: structuredClone(table.aiPlan), result: structuredClone(table.result) };
+                this.abortInFlightAi(id, 'ARENA_NEXT_ROUND');
+                table = { mode: 'duel', roundId: randomBytes(18).toString('base64url'), traces: [], previousRound };
+                this.arenaModes.set(id, table);
+            }
+            else if (input.action === 'mode' || input.action === 'reset' || !table) {
+                this.abortInFlightAi(id, 'ARENA_MODE_CHANGED');
+                table = { mode: input.action === 'mode' ? input.mode : table?.mode ?? 'adventure', roundId: randomBytes(18).toString('base64url'), traces: [] };
+                this.arenaModes.set(id, table);
+            }
+            if (input.action === 'lock') {
+                if (!table.aiPlan || table.result)
+                    return fail('AI 尚未完成组装或本轮已结束');
+                try {
+                    const plan = JSON.stringify(quoteArenaPlan(input.loadout).plan);
+                    if (table.planJson && table.planJson !== plan)
+                        return fail('你的战车已锁定');
+                    table.planJson = plan;
+                }
+                catch (error) {
+                    return fail(error instanceof Error ? error.message : '装配不合法');
+                }
+            }
+            if (input.action === 'finish') {
+                if (!table.planJson || !table.aiPlan)
+                    return fail('比赛尚未开战');
+                if (table.result && JSON.stringify(table.result) !== JSON.stringify(input.result))
+                    return fail('已确认的比赛结果不能更改');
+                table.result = structuredClone(input.result);
+            }
+            const result = { ok: true, mode: table.mode, roundId: table.roundId, budget: ARENA_DUEL_BUDGET, ...(input.action === 'review' ? { traces: arenaReviewTraces(table.traces) } : {}), ...(input.action === 'next' ? { retainedPlan: structuredClone(table.previousRound.playerPlan) } : {}) };
+            if (['mode', 'reset', 'lock', 'finish', 'next'].includes(input.action)) {
+                if (this.arenaModeOperations.size > 1024)
+                    this.arenaModeOperations.delete(this.arenaModeOperations.keys().next().value);
+                this.arenaModeOperations.set(key, { input: serialized, result });
+            }
+            return result;
+        }
+        async setAiBinding(input) {
+            const resolved = this.core.resolveRuntime(input?.runtimeToken);
+            if (!resolved.ok)
+                return { ok: false, errorCode: resolved.code, message: resolved.message };
+            if (resolved.lease.gameId === 'example.minesweeping')
+                return { ok: false, errorCode: 'CAPABILITY_UNAVAILABLE', message: '扫雷 AI 接入已取消' };
+            if (resolved.lease.state !== 'running' || typeof input.slot !== 'string' || typeof input.providerId !== 'string' || typeof input.modelId !== 'string')
+                return { ok: false, errorCode: 'PROTOCOL_INVALID', message: '非法模型绑定或非运行状态' };
+            const manifest = await this.runtimeManifest(resolved.lease);
+            if (!manifest?.ai?.slots?.[input.slot])
+                return { ok: false, errorCode: 'PROTOCOL_INVALID', message: '游戏未声明该 AI slot' };
+            if (this.inFlightAiByRuntimeInstance.get(resolved.lease.runtimeInstanceId)?.size)
+                return { ok: false, errorCode: 'RATE_LIMIT', message: '生成期间不可切换模型' };
+            try {
+                const llm = this.hostCtx.llm;
+                if (!llm?.resolveModelInfo)
+                    throw new Error('模型能力查询不可用');
+                const info = await llm.resolveModelInfo(input.providerId, input.modelId);
+                const effort = input.reasoningEffort ?? info.reasoning?.defaultEffort;
+                if (effort !== undefined && !info.reasoning?.efforts?.some((x) => x.id === effort))
+                    throw new Error('该模型不支持所选推理水平');
+                const binding = { providerId: input.providerId, modelId: input.modelId, ...(effort === undefined ? {} : { reasoningEffort: effort }) };
+                const current = this.core.resolveRuntime(input.runtimeToken), id = resolved.lease.runtimeInstanceId;
+                if (!current.ok || current.lease !== resolved.lease || current.lease.state !== 'running' || current.lease.sealed)
+                    return { ok: false, errorCode: 'STALE_RUNTIME', message: '会话已暂停或关闭' };
+                if (this.inFlightAiByRuntimeInstance.get(id)?.size)
+                    return { ok: false, errorCode: 'RATE_LIMIT', message: '生成期间不可切换模型' };
+                const table = this.arenaModes.get(id), previous = this.aiBindings.get(`${id}\0${input.slot}`);
+                if (table?.mode === 'duel' && input.slot === 'vehicleBuild') {
+                    if (table.planJson)
+                        return { ok: false, errorCode: 'RATE_LIMIT', message: '对局已开战，请先重置' };
+                    if (JSON.stringify(previous) !== JSON.stringify(binding))
+                        this.arenaModes.set(id, { mode: 'duel', roundId: randomBytes(18).toString('base64url'), traces: [], ...(table.previousRound ? { previousRound: structuredClone(table.previousRound) } : {}) });
+                }
+                this.aiBindings.set(`${id}\0${input.slot}`, binding);
+                return { ok: true, binding };
+            }
+            catch (err) {
+                return { ok: false, errorCode: 'CAPABILITY_UNAVAILABLE', message: err instanceof Error ? err.message : '模型不可用' };
+            }
+        }
+        async landlordAction(input, signal) {
+            const error = (message, code = 'PROTOCOL_INVALID') => ({ ok: false, errorCode: code, message });
+            const resolved = this.core.resolveRuntime(input?.runtimeToken);
+            if (!resolved.ok)
+                return error(resolved.message, resolved.code);
+            const lease = resolved.lease, id = lease.runtimeInstanceId;
+            if (lease.gameId !== 'example.landlord' || lease.state !== 'running' || lease.sealed)
+                return error('斗地主实例未运行', 'STALE_RUNTIME');
+            const manifest = await this.runtimeManifest(lease);
+            if (manifest?.id !== 'example.landlord')
+                return error('未绑定可信斗地主资源');
+            const current = this.core.resolveRuntime(input.runtimeToken);
+            if (!current.ok || current.lease.state !== 'running' || current.lease.sealed)
+                return error('牌局已关闭或暂停', 'STALE_RUNTIME');
+            if (!input || Object.keys(input).some(k => !['runtimeToken', 'operationId', 'expectedRevision', 'action', 'cards', 'bid'].includes(k)) ||
+                !['state', 'new', 'bid', 'play', 'pass', 'ai', 'cancel', 'review'].includes(input.action) || typeof input.operationId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(input.operationId))
+                return error('命令不合法；不接受座位、手牌或自定义提示词');
+            let table = this.landlordTables.get(id);
+            if (!table) {
+                table = { game: createLandlordGame(), traces: [], operations: new Map() };
+                this.landlordTables.set(id, table);
+            }
+            // Check before operation replay: no trace or another seat's hand may leave Host during play.
+            if (input.action === 'review') {
+                if (table.game.phase !== 'finished')
+                    return error('本局结束后才能查看 AI 对话与用量', 'CAPABILITY_UNAVAILABLE');
+                if (input.expectedRevision !== table.game.revision)
+                    return error('牌局已变化', 'STALE_RUNTIME');
+                return { ok: true, review: structuredClone({ revision: table.game.revision, calls: table.traces, summary: summarizeCalls(table.traces) }) };
+            }
+            const serialized = JSON.stringify({ action: input.action, expectedRevision: input.expectedRevision, cards: input.cards, bid: input.bid });
+            const previous = table.operations.get(input.operationId);
+            if (previous)
+                return previous.input === serialized ? previous.result : error('同一操作编号不能更换参数');
+            const pending = table.pending;
+            if (pending?.id === input.operationId)
+                return pending.input === serialized ? pending.promise : error('并发操作参数冲突');
+            if (input.action === 'state')
+                return { ok: true, view: landlordSeatView(table.game, 0) };
+            if (input.action === 'cancel') {
+                table.pending?.controller.abort('USER_CANCELLED');
+                return { ok: true, view: landlordSeatView(table.game, 0) };
+            }
+            if (input.expectedRevision !== table.game.revision)
+                return error('牌局已变化，请刷新后操作', 'STALE_RUNTIME');
+            if (input.action === 'new') {
+                table.pending?.controller.abort('NEW_GAME');
+                delete table.pending;
+                const revision = table.game.revision + 1;
+                table.game = createLandlordGame();
+                table.game.revision = revision;
+                table.traces = [];
+                table.operations.clear();
+                const result = { ok: true, view: landlordSeatView(table.game, 0) };
+                table.operations.set(input.operationId, { input: serialized, result });
+                return result;
+            }
+            if (table.pending)
+                return error('电脑正在思考，请等待', 'RATE_LIMIT');
+            if (input.action !== 'ai') {
+                if (table.game.turn !== 0)
+                    return error('未轮到玩家');
+                try {
+                    applyLandlordAction(table.game, 0, input.action === 'bid' ? { bid: input.bid } : { cards: input.action === 'pass' ? [] : input.cards });
+                }
+                catch (e) {
+                    return error(e instanceof Error ? e.message : '动作不合法');
+                }
+                const result = { ok: true, view: landlordSeatView(table.game, 0) };
+                table.operations.set(input.operationId, { input: serialized, result });
+                return result;
+            }
+            const game = table.game, seat = game.turn;
+            if (seat === 0 || game.phase === 'finished')
+                return error('当前不是电脑回合');
+            const slot = `landlordSeat${seat}`, binding = this.aiBindings.get(`${id}\0${slot}`);
+            if (binding && !manifest.ai?.slots?.[slot])
+                return error('未授权的电脑模型 slot');
+            const controller = new AbortController(), cancel = () => controller.abort('CALLER_CANCELLED');
+            signal?.addEventListener('abort', cancel, { once: true });
+            if (signal?.aborted)
+                cancel();
+            let set = this.inFlightAiByRuntimeInstance.get(id);
+            if (!set) {
+                set = new Set();
+                this.inFlightAiByRuntimeInstance.set(id, set);
+            }
+            set.add(controller);
+            lease.expiresAt = new Date(this.core.nowMs() + 150_000).toISOString();
+            // Full state, shuffle seed and other hands are never broker arguments.
+            const view = landlordSeatView(game, seat), revision = game.revision;
+            const trace = { operationId: input.operationId, seat, revision, startedAt: new Date().toISOString(), ...(binding ? { requestedBinding: { ...binding } } : {}), elapsedMs: 0, usage: {}, status: binding ? 'failed' : 'local', source: 'none' };
+            table.traces.push(trace);
+            const promise = (async () => {
+                let source = 'local', reason = binding ? '' : '该座位尚未绑定模型，使用本地策略', metadata = {};
+                let decision;
+                try {
+                    if (binding) {
+                        const generated = await generateLandlordDecision(this.hostCtx.llm, { ...binding }, view, controller.signal, report => Object.assign(trace, report));
+                        decision = generated.action;
+                        source = 'ai';
+                        metadata = { binding: generated.binding, elapsedMs: generated.elapsedMs, ...('usage' in generated ? { usage: generated.usage } : {}) };
+                    }
+                    else
+                        decision = localLandlordDecision(view);
+                }
+                catch (e) {
+                    if (controller.signal.aborted) {
+                        trace.source = 'none';
+                        return error('电脑请求已取消，未执行动作', 'CANCELLED');
+                    }
+                    ;
+                    reason = e instanceof Error ? e.message : '模型失败';
+                    decision = localLandlordDecision(view);
+                }
+                const active = this.core.resolveRuntime(input.runtimeToken);
+                if (controller.signal.aborted || !active.ok || active.lease.state !== 'running' || active.lease.sealed || table.game !== game || game.revision !== revision)
+                    return error('牌局已改变，迟到动作已丢弃', 'STALE_RUNTIME');
+                try {
+                    applyLandlordAction(game, seat, decision);
+                }
+                catch (e) {
+                    return error(e instanceof Error ? e.message : '动作非法');
+                }
+                trace.source = source;
+                trace.action = structuredClone(decision);
+                if (reason && !trace.error)
+                    trace.error = reason;
+                const result = { ok: true, view: landlordSeatView(game, 0), decision: { seat, source, ...(reason ? { reason } : {}), ...metadata } };
+                table.operations.set(input.operationId, { input: serialized, result });
+                if (table.operations.size > 256)
+                    table.operations.delete(table.operations.keys().next().value);
+                return result;
+            })();
+            table.pending = { id: input.operationId, input: serialized, promise, controller };
+            try {
+                return await promise;
+            }
+            finally {
+                signal?.removeEventListener('abort', cancel);
+                set.delete(controller);
+                if (table.pending?.promise === promise)
+                    delete table.pending;
+            }
+        }
+        suspendRuntime(input) {
+            const resolved = this.core.resolveRuntime(input?.runtimeToken);
+            if (!resolved.ok)
+                return { ok: false, errorCode: resolved.code, message: resolved.message };
+            const lease = resolved.lease;
+            if (lease.generation !== input.generation || !['running', 'suspended'].includes(lease.state))
+                return { ok: false, errorCode: 'STALE_RUNTIME', message: '会话已失效' };
+            this.abortInFlightAi(lease.runtimeInstanceId, 'SUSPENDED');
+            if (lease.state !== 'suspended')
+                lease.suspendedRemainingMs = Math.max(1, Date.parse(lease.expiresAt) - this.core.nowMs());
+            lease.state = 'suspended';
+            return { ok: true };
+        }
+        resumeRuntime(input) {
+            const resolved = this.core.resolveRuntime(input?.runtimeToken);
+            if (!resolved.ok)
+                return { ok: false, errorCode: resolved.code, message: resolved.message };
+            const lease = resolved.lease;
+            if (lease.generation !== input.generation || !['running', 'suspended'].includes(lease.state))
+                return { ok: false, errorCode: 'STALE_RUNTIME', message: '会话已失效' };
+            if (lease.state === 'suspended')
+                lease.expiresAt = new Date(this.core.nowMs() + (lease.suspendedRemainingMs ?? lease.ttlMs)).toISOString();
+            lease.expiresAt = new Date(this.core.nowMs() + lease.ttlMs).toISOString();
+            lease.state = 'running';
+            return { ok: true };
+        }
+        cancelAi(input) {
+            const resolved = this.core.resolveRuntime(input?.runtimeToken);
+            if (!resolved.ok)
+                return { ok: false };
+            for (const [key, value] of this.inFlightAiOperations) {
+                if (key.startsWith(`${resolved.lease.runtimeInstanceId}\0`) && key.endsWith(`\0${input.operationId}`))
+                    value.abortController.abort('USER_CANCELLED');
+            }
+            return { ok: true };
+        }
+        async saveAck(input) {
+            const resolved = this.core.resolveRuntime(input.runtimeToken);
+            if (resolved.ok) {
+                const { lease } = resolved;
+                const manifest = await this.runtimeManifest(lease);
+                if (manifest && !hasSaveCapability(manifest)) {
+                    return {
+                        accepted: false,
+                        state: lease.state,
+                        lastPersistedRevision: lease.lastPersistedRevision,
+                        error: { code: 'SAVE_UNSUPPORTED', message: '游戏未声明存档能力' },
+                    };
+                }
+            }
             return this.core.saveAck(input);
         }
         pause(input) {
+            const resolved = this.core.resolveRuntime(input.runtimeToken);
+            if (resolved.ok) {
+                this.abortInFlightAi(resolved.lease.runtimeInstanceId, 'PAUSED');
+            }
             return this.core.pause(input);
         }
         leaseStatus(input) {
@@ -448,13 +1524,51 @@ let GameCenterService = (() => {
             return this.core.modelCatalog(this.hostCtx.llm, signal);
         }
         async catalogList(input) {
-            return listCatalog({
+            // 远端模式：endpoint 为空时整体静默（契约 §3 条款 14），不报错、不重试。
+            if (this.catalogMode === 'remote') {
+                if (!this.catalogBaseUrl) {
+                    return { ok: true, source: 'remote', fetchedAt: '', entries: [], stale: false };
+                }
+                this.remoteCatalogProvider ??= new RemoteCatalogProvider({
+                    baseUrl: this.catalogBaseUrl,
+                    token: this.catalogGithubToken,
+                    fetcher: this.catalogFetcher ?? this.resilientFetcher,
+                    cacheStore: new FileCatalogCacheStore(path.join(this.gameLibraryDir, '.cache', 'catalogs', 'remote.json')),
+                });
+                return listCatalog({
+                    mode: 'remote',
+                    provider: this.remoteCatalogProvider,
+                    approvals: this.approvals,
+                    gameLibraryDir: this.gameLibraryDir,
+                    refresh: input?.refresh,
+                    fetcher: this.catalogFetcher ?? this.resilientFetcher,
+                });
+            }
+            const res = await listCatalog({
                 mode: this.catalogMode,
                 approvals: this.approvals,
                 gameLibraryDir: this.gameLibraryDir,
                 fixtureEntries: this.catalogFixtureEntries,
                 refresh: input?.refresh,
+                fetcher: this.catalogFetcher ?? this.resilientFetcher,
+                githubOptions: this.catalogMode === 'github'
+                    ? {
+                        owner: this.catalogRepo.owner,
+                        repo: this.catalogRepo.repo,
+                        token: this.catalogGithubToken,
+                    }
+                    : undefined,
             });
+            if (!res.ok && typeof res.message === 'object' && res.message !== null) {
+                const msgObj = res.message;
+                const statusText = msgObj.details?.status ? ` (HTTP ${msgObj.details.status})` : '';
+                return {
+                    ok: false,
+                    errorCode: res.errorCode,
+                    message: `${msgObj.message ?? '目录请求失败'}${statusText}`,
+                };
+            }
+            return res;
         }
         async catalogInstall(input) {
             const violations = validateCatalogInstallRequest(input);
@@ -465,13 +1579,141 @@ let GameCenterService = (() => {
                     message: violations.map((v) => `${v.field}: ${v.reason}`).join('; '),
                 };
             }
-            const approval = this.approvals.find((a) => a.gameId === input.gameId && a.commit === input.commit);
+            let approval = this.approvals.find((a) => a.gameId === input.gameId &&
+                a.commit === input.commit &&
+                a.manifestDigest === input.manifestDigest &&
+                a.bundleDigest === input.bundleDigest);
+            // 远端模式（配置了 catalogBaseUrl）：向后台动态校验该版本是否已审核上架
+            //
+            // 【网络故障不得伪装成"未审批" · 2026-10-28】原来这段只在 `if (res.ok)` 里做匹配，
+            // 异常被 catch 成一句 console.warn 后继续往下走，最后统一落到 UNAPPROVED_RELEASE
+            // 「未找到…审批记录」。于是断网、代理挂掉、后台重启、404 全部长得一模一样，
+            // 排查方向每次都被带偏（实际只是 `NO_PROXY` 的 CIDR 没生效、请求被推给死代理）。
+            // 现在：连不上 / 非 2xx ⇒ `CATALOG_UNREACHABLE`；只有**请求成功且确实没有匹配条目**
+            // 才回 UNAPPROVED_RELEASE。
+            if (!approval && (this.catalogMode === 'remote' || Boolean(this.catalogBaseUrl))) {
+                const baseUrl = (this.catalogBaseUrl || 'http://192.168.3.222:18080/v1').replace(/\/+$/, '');
+                const versionsUrl = `${baseUrl}/games/${encodeURIComponent(input.gameId)}/versions`;
+                const unreachable = (detail) => ({
+                    ok: false,
+                    errorCode: 'CATALOG_UNREACHABLE',
+                    message: `连不上游戏后台（${baseUrl}）：${detail}。这不是"未审批"，是网络或后台不可达。`,
+                });
+                try {
+                    const fetcher = this.catalogFetcher ?? this.resilientFetcher;
+                    const res = await fetcher(versionsUrl, {
+                        method: 'GET',
+                        headers: { Accept: 'application/json' },
+                    });
+                    if (!res.ok)
+                        return unreachable(`HTTP ${res.status}`);
+                    const body = (await res.json());
+                    const versions = Array.isArray(body) ? body : Array.isArray(body?.versions) ? body.versions : [];
+                    const matched = versions.find((v) => {
+                        const commitMatch = v.commit === input.commit;
+                        const manifestMatch = v.manifestDigest === input.manifestDigest;
+                        const bundleMatch = v.bundleDigest === input.bundleDigest;
+                        const active = v.yanked !== true && v.approvalState !== 'rejected';
+                        return commitMatch && manifestMatch && bundleMatch && active;
+                    });
+                    if (matched && matched.repository) {
+                        approval = {
+                            gameId: input.gameId,
+                            commit: input.commit,
+                            repository: matched.repository,
+                            manifestDigest: input.manifestDigest,
+                            bundleDigest: input.bundleDigest,
+                            approvedAt: matched.publishedAt || matched.updatedAt || new Date().toISOString(),
+                            approvedBy: 'remote-backend',
+                            approvalRecordPath: `remote://${input.gameId}/${input.commit}`,
+                        };
+                        if (!this.approvals.some(a => a.gameId === approval.gameId && a.commit === approval.commit)) {
+                            this.approvals.push(approval);
+                        }
+                    }
+                }
+                catch (err) {
+                    // 畸形 JSON 与网络异常同样属于"后台这条路今天不可用"，一并如实上报。
+                    return unreachable(describeFetchError(err));
+                }
+            }
             if (!approval) {
                 return {
                     ok: false,
                     errorCode: 'UNAPPROVED_RELEASE',
                     message: `未找到游戏 ${input.gameId} 对应提交 ${input.commit} 的审批记录`,
                 };
+            }
+            const runningVersions = this.getRunningVersions();
+            // 检查本地磁盘是否已完成隔离安装：若已安装直接交由 prepareInstall 幂等返回
+            const targetDir = path.join(this.gameLibraryDir, input.gameId, input.commit);
+            let isAlreadyInstalled = false;
+            try {
+                const stat = await fs.promises.stat(targetDir);
+                if (stat.isDirectory()) {
+                    isAlreadyInstalled = true;
+                }
+            }
+            catch {
+                // 未安装
+            }
+            // 上报钩子：endpoint 未配置时为 undefined，整条链路静默。
+            const reporter = (await this.getReportClient())?.forInstall(input.gameId, input.commit);
+            let bundledSource;
+            if (!isAlreadyInstalled) {
+                // 契约 §3：下载真正开始时才报 download-start；已安装的幂等路径不报。
+                reporter?.downloadStarted?.();
+                const fetchRes = await fetchCommitArtifacts({
+                    repository: approval.repository,
+                    commit: input.commit,
+                    // GitHub 产物下载同样直连优先：死代理会把它变成"拉不到产物"，与"提交不存在"混淆。
+                    fetcher: this.catalogFetcher ?? this.resilientFetcher,
+                    token: this.catalogGithubToken,
+                    // 官方 raw 域名不可达的线路上，由配置切到可用镜像（内容仍由摘要把关）。
+                    rawBase: this.rawBaseUrl,
+                });
+                if (!fetchRes.ok || !fetchRes.bundledSource) {
+                    // §11.9：字节没到手 ⇒ `download-fail`（不是 `install-fail`）。不发也不影响记账。
+                    // 迁移未确认前默认不发：ENUM 会拒收新值，反而制造"上报失败"的噪声。
+                    if (this.reportDownloadFailures && fetchRes.detail !== undefined) {
+                        reporter?.downloadFailed?.(fetchRes.detail);
+                    }
+                    return {
+                        ok: false,
+                        errorCode: fetchRes.errorCode ?? 'PROTOCOL_INVALID',
+                        message: fetchRes.message ?? '拉取固定提交产物失败',
+                    };
+                }
+                bundledSource = fetchRes.bundledSource;
+            }
+            // 安装计划里的 version 会落进 `<gameId>/<commit>/.dsh-installed.json`，供审计与展示读取。
+            // 这里**不能**写常量：2026-10-28 实测三个游戏的安装记录版本全是 `1.0.0`，掩盖了真实版本。
+            // 取值优先级：包内清单（字节已过 digest 校验）> 本地已有安装记录 > 兜底常量。
+            let resolvedVersion = '1.0.0';
+            const manifestContent = bundledSource?.manifestContent;
+            if (typeof manifestContent === 'string') {
+                try {
+                    const parsedManifest = JSON.parse(manifestContent);
+                    if (typeof parsedManifest.version === 'string' && parsedManifest.version !== '') {
+                        resolvedVersion = parsedManifest.version;
+                    }
+                }
+                catch {
+                    // 清单畸形：安装器随后会以 PROTOCOL_INVALID 拒绝，这里不额外抛错。
+                }
+            }
+            else {
+                // 幂等路径（已安装，不重新下载）：沿用本地记录的版本，避免把真实版本覆盖成占位符。
+                try {
+                    const metaRaw = await fs.promises.readFile(path.join(targetDir, '.dsh-installed.json'), 'utf-8');
+                    const meta = JSON.parse(metaRaw);
+                    if (typeof meta.version === 'string' && meta.version !== '') {
+                        resolvedVersion = meta.version;
+                    }
+                }
+                catch {
+                    // 读不到记录就保持兜底常量；该路径不会重写元数据。
+                }
             }
             return prepareInstall({
                 entry: {
@@ -487,12 +1729,75 @@ let GameCenterService = (() => {
                     },
                     title: input.gameId,
                     summary: '',
-                    version: '1.0.0',
+                    version: resolvedVersion,
                 },
-                approvals: this.approvals,
+                approvals: approval && !this.approvals.some(a => a.gameId === approval.gameId && a.commit === approval.commit)
+                    ? [...this.approvals, approval]
+                    : this.approvals,
                 gameLibraryDir: this.gameLibraryDir,
                 stagingDir: path.join(this.gameLibraryDir, '.staging'),
+                bundledSource,
+                runningVersions,
+                dshObservation: this.dshObservation,
+                gameCenterObservation: this.gameCenterObservation,
+                reporter,
             });
+        }
+        async catalogUninstall(input) {
+            const violations = validateCatalogUninstallRequest(input);
+            if (violations.length > 0) {
+                return {
+                    ok: false,
+                    errorCode: 'PROTOCOL_INVALID',
+                    message: violations.map((v) => `${v.field}: ${v.reason}`).join('; '),
+                };
+            }
+            // 检查活动运行租约：若游戏处于活跃租约中（running/pausing/pending），拒绝卸载
+            const activeLeases = this.core.inspect(input.gameId);
+            const isRunning = activeLeases.some((l) => l.state === 'running' || l.state === 'pausing' || l.state === 'pending');
+            if (isRunning) {
+                return {
+                    ok: false,
+                    errorCode: 'STALE_RUNTIME',
+                    message: `游戏 ${input.gameId} 正在运行中，请先退出游戏后再卸载`,
+                };
+            }
+            const commit = input.commit;
+            if (commit) {
+                const res = await uninstallGamePackage(this.gameLibraryDir, input.gameId, commit);
+                if (!res.ok) {
+                    return {
+                        ok: false,
+                        errorCode: 'PROTOCOL_INVALID',
+                        message: res.reason || '卸载指定版本失败',
+                    };
+                }
+                return {
+                    ok: true,
+                    gameId: input.gameId,
+                    commit,
+                    removedPath: res.removedPath || path.join(this.gameLibraryDir, input.gameId, commit),
+                };
+            }
+            else {
+                // 卸载整个 gameId 的已安装目录
+                const gameDir = path.join(this.gameLibraryDir, input.gameId);
+                try {
+                    await fs.promises.rm(gameDir, { recursive: true, force: true });
+                    return {
+                        ok: true,
+                        gameId: input.gameId,
+                        removedPath: gameDir,
+                    };
+                }
+                catch (err) {
+                    return {
+                        ok: false,
+                        errorCode: 'PROTOCOL_INVALID',
+                        message: `卸载游戏失败: ${err?.message || String(err)}`,
+                    };
+                }
+            }
         }
         async gameBundle(input) {
             if (!input || typeof input !== 'object' || typeof input.gameId !== 'string' || typeof input.commit !== 'string') {
@@ -502,11 +1807,95 @@ let GameCenterService = (() => {
                     message: '入参必须包含非空的 gameId 与 commit',
                 };
             }
+            const runningVersions = this.getRunningVersions();
             return readInstalledBundle({
                 gameLibraryDir: this.gameLibraryDir,
                 gameId: input.gameId,
                 commit: input.commit,
+                runningVersions,
+                dshObservation: this.dshObservation,
+                gameCenterObservation: this.gameCenterObservation,
             });
+        }
+        getRunningVersions() {
+            if (this.runningVersions !== undefined) {
+                return this.runningVersions;
+            }
+            if (this.dshObservation !== undefined || this.gameCenterObservation !== undefined) {
+                const pair = resolveRunningVersions(this.gameCenterObservation, this.dshObservation);
+                if (pair.ok) {
+                    return pair.pair;
+                }
+                return null;
+            }
+            // 默认 fail closed：未取得当前进程绑定的版本证据前，不补历史 lock 或 SDK_VERSION
+            return null;
+        }
+        async resolveGameManifest(gameId, commit) {
+            if (this.manifestResolver) {
+                try {
+                    const m = await this.manifestResolver(gameId, commit);
+                    if (m)
+                        return m;
+                }
+                catch {
+                    // 自定义解析失败回退本地
+                }
+            }
+            // 1. 尝试从已安装目录读取
+            if (commit) {
+                const commitManifest = path.join(this.gameLibraryDir, gameId, commit, 'gamecenter.json');
+                try {
+                    const raw = await fs.promises.readFile(commitManifest, 'utf-8');
+                    const parsed = JSON.parse(raw);
+                    if (parsed.id !== gameId || parsed.schemaVersion !== 1)
+                        return null;
+                    const approval = this.approvals.find(a => a.gameId === gameId && a.commit === commit);
+                    if (!approval || calculateManifestDigest(raw) !== approval.manifestDigest)
+                        return null;
+                    return parsed;
+                }
+                catch {
+                    // 未找到
+                }
+                return null;
+            }
+            else {
+                // 遍历 gameLibraryDir/gameId 下的子目录查找已安装版本
+                const gameDir = path.join(this.gameLibraryDir, gameId);
+                try {
+                    const entries = await fs.promises.readdir(gameDir, { withFileTypes: true });
+                    if (entries.filter(ent => ent.isDirectory() && !ent.name.startsWith('.')).length > 1)
+                        return null;
+                    for (const ent of entries) {
+                        if (ent.isDirectory() && !ent.name.startsWith('.')) {
+                            const mPath = path.join(gameDir, ent.name, 'gamecenter.json');
+                            try {
+                                const raw = await fs.promises.readFile(mPath, 'utf-8');
+                                return JSON.parse(raw);
+                            }
+                            catch {
+                                // 继续
+                            }
+                        }
+                    }
+                }
+                catch {
+                    // 目录不存在
+                }
+            }
+            // 2. 尝试从预览目录读取
+            if (this.previewDir) {
+                const previewManifest = path.join(this.previewDir, gameId, 'gamecenter.json');
+                try {
+                    const raw = await fs.promises.readFile(previewManifest, 'utf-8');
+                    return JSON.parse(raw);
+                }
+                catch {
+                    // 未找到
+                }
+            }
+            return null;
         }
         async saveLatest(input) {
             const violations = validateSaveLatestRequest(input);
@@ -515,6 +1904,15 @@ let GameCenterService = (() => {
                     ok: false,
                     errorCode: 'PROTOCOL_INVALID',
                     message: violations.map((v) => `${v.field}: ${v.reason}`).join('; '),
+                };
+            }
+            const activeLease = this.core.registry.get(input.gameId, input.saveId);
+            const manifest = activeLease && input.commit === undefined ? await this.runtimeManifest(activeLease) : await this.resolveGameManifest(input.gameId, input.commit);
+            if (manifest && !hasSaveCapability(manifest)) {
+                return {
+                    ok: false,
+                    errorCode: 'SAVE_UNSUPPORTED',
+                    message: '游戏未声明存档能力',
                 };
             }
             const readRes = await this.saveStore.readCheckpoint(input.gameId, input.saveId, {
@@ -567,6 +1965,17 @@ let GameCenterService = (() => {
                 };
             }
             const { lease } = resolved;
+            const manifest = await this.runtimeManifest(lease);
+            if (!manifest)
+                return { ok: false, errorCode: 'PROTOCOL_INVALID', message: '未找到当前运行版本的可信 manifest', retryable: false };
+            if (!hasSaveCapability(manifest)) {
+                return {
+                    ok: false,
+                    errorCode: 'SAVE_UNSUPPORTED',
+                    message: '游戏未声明存档能力',
+                    retryable: false,
+                };
+            }
             if (typeof input.gameId === 'string' && input.gameId !== lease.gameId) {
                 return {
                     ok: false,
@@ -614,6 +2023,9 @@ let GameCenterService = (() => {
                     };
                 }
             }
+            const installedCommit = this.runtimeTargets.get(lease.runtimeInstanceId)?.commit ?? (this.manifestResolver ? input.installedCommit : undefined);
+            if (!installedCommit || !/^[a-f0-9]{40}$/.test(installedCommit))
+                return { ok: false, errorCode: 'PROTOCOL_INVALID', message: '存档缺少绑定的固定提交', retryable: false };
             const writeRes = await this.saveStore.writeCheckpoint({
                 playerId: this.playerId,
                 gameId: lease.gameId,
@@ -621,7 +2033,7 @@ let GameCenterService = (() => {
                 generation: lease.generation,
                 activeGeneration: lease.generation,
                 isSealed: lease.sealed,
-                installedCommit: input.installedCommit ?? 'e4905dbe4a738a8406b39013292d6a545ab3a356',
+                installedCommit,
                 gameStateSchemaVersion: input.gameStateSchemaVersion ?? 1,
                 elapsedGameMs: input.elapsedGameMs,
                 rngState: input.rngState,
@@ -679,6 +2091,7 @@ let GameCenterService = (() => {
                             previewId: sub.name,
                             gameId: manifest.id,
                             name: manifest.name,
+                            categories: manifest.categories ?? [],
                             version: manifest.version,
                             source: 'fixture',
                             label: GAME_PREVIEW_LABEL,
@@ -727,6 +2140,25 @@ let GameCenterService = (() => {
                     errorCode: 'PROTOCOL_INVALID',
                     message: `读取预览目录 manifest 失败: ${e instanceof Error ? e.message : String(e)}`,
                 };
+            }
+            // 平台兼容门禁校验 (阶段1：仅在声明了 compatibility 时门禁介入；若未决或不匹配拒绝下发)
+            if (manifest.compatibility) {
+                const runningVersions = this.getRunningVersions();
+                if (!runningVersions) {
+                    return {
+                        ok: false,
+                        errorCode: 'COMPAT_UNRESOLVED',
+                        message: '无法解析当前运行宿主或游戏中心版本，已阻止下发预览产物',
+                    };
+                }
+                const evalRes = evaluateCompatibility(manifest.compatibility, runningVersions, sdkRangeAccepts);
+                if (!evalRes.ok) {
+                    return {
+                        ok: false,
+                        errorCode: 'INCOMPATIBLE_RUNTIME',
+                        message: evalRes.reason,
+                    };
+                }
             }
             const bundleFiles = [];
             const walk = async (dir) => {
@@ -790,7 +2222,503 @@ let GameCenterService = (() => {
             };
         }
         async abandonRuntime(input) {
-            return this.core.abandonRuntime(input);
+            const result = this.core.abandonRuntime(input);
+            if (result.ok) {
+                this.abortInFlightAi(input.runtimeInstanceId, 'ABANDONED');
+                this.landlordTables.delete(input.runtimeInstanceId);
+                this.arenaModes.delete(input.runtimeInstanceId);
+                for (const key of this.arenaModeOperations.keys())
+                    if (key.startsWith(input.runtimeInstanceId + '\0'))
+                        this.arenaModeOperations.delete(key);
+                for (const key of this.aiBindings.keys())
+                    if (key.startsWith(`${input.runtimeInstanceId}\0`))
+                        this.aiBindings.delete(key);
+            }
+            return result;
+        }
+        async mediaFetch(input) {
+            // 媒体安全未决保护（fail closed）：在安全审计全套闭环前，默认禁用媒体拉取，不发任何网络请求
+            if (!this.mediaSecurityVerified) {
+                return {
+                    ok: false,
+                    errorCode: 'MEDIA_UNAVAILABLE',
+                    message: '媒体拉取安全校验未通过，暂不可用',
+                };
+            }
+            const violations = validateMediaFetchRequest(input);
+            if (violations.length > 0) {
+                return {
+                    ok: false,
+                    errorCode: 'PROTOCOL_INVALID',
+                    message: violations.map((v) => `${v.field}: ${v.reason}`).join('; '),
+                };
+            }
+            if (typeof input.expectedMime !== 'string' ||
+                input.expectedMime.length === 0 ||
+                typeof input.expectedSha256 !== 'string' ||
+                input.expectedSha256.length === 0) {
+                return {
+                    ok: false,
+                    errorCode: 'PROTOCOL_INVALID',
+                    message: 'expectedMime 与 expectedSha256 必须必填（来自已验证目录元数据）',
+                };
+            }
+            if (!isAllowedMediaUrl(input.url, this.allowedMediaHosts)) {
+                return {
+                    ok: false,
+                    errorCode: 'PROTOCOL_INVALID',
+                    message: 'url 必须是不含 userinfo / 非默认端口 / 白名单主机上的 https URL',
+                };
+            }
+            const fetcher = this.mediaFetcher ??
+                (async (url, opts) => {
+                    const fetchOpts = {
+                        credentials: 'omit',
+                        redirect: opts?.redirect ?? 'manual',
+                    };
+                    if (opts?.signal) {
+                        fetchOpts.signal = opts.signal;
+                    }
+                    const res = await fetch(url, fetchOpts);
+                    return {
+                        ok: res.ok,
+                        status: res.status,
+                        url: res.url,
+                        headers: res.headers,
+                        body: res.body,
+                        arrayBuffer: () => res.arrayBuffer(),
+                    };
+                });
+            let currentUrl = input.url;
+            let redirectCount = 0;
+            let resp;
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 10000);
+            try {
+                while (true) {
+                    if (!isAllowedMediaUrl(currentUrl, this.allowedMediaHosts)) {
+                        return {
+                            ok: false,
+                            errorCode: 'PROTOCOL_INVALID',
+                            message: `媒体请求目标 URL 不在允许的主机白名单内: ${currentUrl}`,
+                        };
+                    }
+                    let hostname = '';
+                    try {
+                        hostname = new URL(currentUrl).hostname;
+                    }
+                    catch {
+                        return {
+                            ok: false,
+                            errorCode: 'PROTOCOL_INVALID',
+                            message: `非法媒体 URL: ${currentUrl}`,
+                        };
+                    }
+                    // DNS 解析防 SSRF / 私网回环拦截
+                    let resolvedIp = '';
+                    try {
+                        const lookupFn = this.dnsLookup ?? dns.lookup;
+                        const dnsRes = await lookupFn(hostname);
+                        resolvedIp = dnsRes.address;
+                    }
+                    catch (e) {
+                        return {
+                            ok: false,
+                            errorCode: 'MEDIA_UNREACHABLE',
+                            message: `DNS 解析主机失败 (${hostname}): ${e instanceof Error ? e.message : String(e)}`,
+                        };
+                    }
+                    if (isPrivateOrLoopbackIp(resolvedIp)) {
+                        return {
+                            ok: false,
+                            errorCode: 'MEDIA_UNREACHABLE',
+                            message: `禁止访问私有内网或回环 IP 地址 (${hostname} -> ${resolvedIp})`,
+                        };
+                    }
+                    try {
+                        resp = await fetcher(currentUrl, {
+                            signal: controller.signal,
+                            redirect: 'manual',
+                            credentials: 'omit',
+                        });
+                    }
+                    catch (e) {
+                        return {
+                            ok: false,
+                            errorCode: 'MEDIA_UNREACHABLE',
+                            message: `媒体资源网络请求失败: ${e instanceof Error ? e.message : String(e)}`,
+                        };
+                    }
+                    // 显式每跳重定向拦截 (301, 302, 307, 308)
+                    if (resp.status >= 300 && resp.status < 400) {
+                        redirectCount++;
+                        if (redirectCount > 3) {
+                            return {
+                                ok: false,
+                                errorCode: 'PROTOCOL_INVALID',
+                                message: '媒体重定向次数超过上限 (最多 3 次)',
+                            };
+                        }
+                        const location = resp.headers.get('location');
+                        if (!location) {
+                            return {
+                                ok: false,
+                                errorCode: 'MEDIA_UNREACHABLE',
+                                message: `媒体重定向响应 (HTTP ${resp.status}) 缺少 Location 头`,
+                            };
+                        }
+                        try {
+                            currentUrl = new URL(location, currentUrl).href;
+                        }
+                        catch {
+                            return {
+                                ok: false,
+                                errorCode: 'PROTOCOL_INVALID',
+                                message: `媒体重定向 Location 格式非法: ${location}`,
+                            };
+                        }
+                        continue;
+                    }
+                    break;
+                }
+            }
+            finally {
+                clearTimeout(timer);
+            }
+            if (!resp || !resp.ok) {
+                return {
+                    ok: false,
+                    errorCode: 'MEDIA_UNREACHABLE',
+                    message: `媒体资源获取响应非 2xx: HTTP ${resp?.status ?? 0}`,
+                };
+            }
+            // 重定向每跳安全校验：最终落地 URL 若脱离白名单域名坚决拦截
+            if (resp.url && !isAllowedMediaUrl(resp.url, this.allowedMediaHosts)) {
+                return {
+                    ok: false,
+                    errorCode: 'PROTOCOL_INVALID',
+                    message: '媒体重定向最终目标 URL 不在允许的主机白名单内',
+                };
+            }
+            // 统一语义：接入媒体不得越过 catalog 单图上限 MEDIA_MAX_BYTES_PER_IMAGE (2 MiB)
+            const maxBytes = input.maxBytes !== undefined
+                ? Math.min(input.maxBytes, MEDIA_MAX_BYTES_PER_IMAGE)
+                : MEDIA_MAX_BYTES_PER_IMAGE;
+            const rawLenHeader = resp.headers.get('content-length');
+            if (rawLenHeader) {
+                const len = Number(rawLenHeader);
+                if (Number.isFinite(len) && len > maxBytes) {
+                    return {
+                        ok: false,
+                        errorCode: 'MEDIA_TOO_LARGE',
+                        message: `媒体体积超出上限: 声明大小 ${len} > ${maxBytes}`,
+                    };
+                }
+            }
+            let buf;
+            try {
+                if (resp.body && typeof resp.body.getReader === 'function') {
+                    const reader = resp.body.getReader();
+                    const chunks = [];
+                    let total = 0;
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done)
+                            break;
+                        if (value) {
+                            const chunk = value;
+                            total += chunk.byteLength;
+                            if (total > maxBytes) {
+                                await reader.cancel();
+                                return {
+                                    ok: false,
+                                    errorCode: 'MEDIA_TOO_LARGE',
+                                    message: `媒体体积超出上限: 流式读取超出 ${maxBytes} 字节，连接已主动中断`,
+                                };
+                            }
+                            chunks.push(chunk);
+                        }
+                    }
+                    buf = Buffer.concat(chunks);
+                }
+                else {
+                    const ab = await resp.arrayBuffer();
+                    buf = Buffer.from(new Uint8Array(ab));
+                }
+            }
+            catch (e) {
+                return {
+                    ok: false,
+                    errorCode: 'MEDIA_UNREACHABLE',
+                    message: `读取媒体字节失败: ${e instanceof Error ? e.message : String(e)}`,
+                };
+            }
+            if (buf.length > maxBytes) {
+                return {
+                    ok: false,
+                    errorCode: 'MEDIA_TOO_LARGE',
+                    message: `媒体体积超出上限: 实际大小 ${buf.length} > ${maxBytes}`,
+                };
+            }
+            const rawType = resp.headers.get('content-type') ?? '';
+            const mime = rawType.split(';')[0]?.trim().toLowerCase() ?? '';
+            if (!MEDIA_ALLOWED_MIMES.includes(mime)) {
+                return {
+                    ok: false,
+                    errorCode: 'MEDIA_MIME_MISMATCH',
+                    message: `媒体 MIME '${mime}' 不在允许的白名单内 (仅限 png/jpeg/webp/gif)`,
+                };
+            }
+            // 实际文件魔数 (magic bytes) 校验，防止伪造 content-type 绕过 MIME 检查
+            if (!matchesImageMagicBytes(buf, mime)) {
+                return {
+                    ok: false,
+                    errorCode: 'MEDIA_MIME_MISMATCH',
+                    message: `媒体文件内容魔数与声明的 MIME 类型 '${mime}' 不符`,
+                };
+            }
+            // 图像实际像素尺寸解码与上限校验 (MEDIA_MAX_EDGE_PX = 4096)
+            const dimensions = parseImageDimensions(buf, mime);
+            if (!dimensions) {
+                return {
+                    ok: false,
+                    errorCode: 'MEDIA_MIME_MISMATCH',
+                    message: `无法解析媒体图像尺寸或格式损坏 (MIME: ${mime})`,
+                };
+            }
+            if (dimensions.width > MEDIA_MAX_EDGE_PX || dimensions.height > MEDIA_MAX_EDGE_PX) {
+                return {
+                    ok: false,
+                    errorCode: 'MEDIA_MIME_MISMATCH',
+                    message: `媒体图像尺寸超出上限 (${dimensions.width}x${dimensions.height} > ${MEDIA_MAX_EDGE_PX}px)`,
+                };
+            }
+            if (!input.expectedMime || input.expectedMime.toLowerCase() !== mime) {
+                return {
+                    ok: false,
+                    errorCode: 'MEDIA_MIME_MISMATCH',
+                    message: `媒体 MIME 不匹配: 收到 '${mime}'，期望 '${input.expectedMime}'`,
+                };
+            }
+            const sha256Hex = createHash('sha256').update(buf).digest('hex');
+            const expectedNormalized = (input.expectedSha256 ?? '').replace(/^sha256:/i, '').toLowerCase();
+            if (!input.expectedSha256 || sha256Hex !== expectedNormalized) {
+                return {
+                    ok: false,
+                    errorCode: 'MEDIA_DIGEST_MISMATCH',
+                    message: `媒体 SHA-256 不匹配: 实际 'sha256:${sha256Hex}'，期望 '${input.expectedSha256}'`,
+                };
+            }
+            return {
+                ok: true,
+                mime: mime,
+                sha256: `sha256:${sha256Hex}`,
+                byteLength: buf.length,
+                dataBase64: buf.toString('base64'),
+            };
+        }
+        async aiGenerate(input, signal) {
+            const game = this.core.resolveRuntime(input?.runtimeToken);
+            if (game.ok && game.lease.gameId === 'example.minesweeping')
+                return { ok: false, errorCode: 'CAPABILITY_UNAVAILABLE', message: '扫雷 AI 接入已取消，请使用本地经典模式' };
+            if (game.ok && game.lease.gameId === 'example.landlord')
+                return { ok: false, errorCode: 'CAPABILITY_UNAVAILABLE', message: '斗地主仅允许 Host 为当前座位构造模型请求' };
+            const violations = validateAiGenerateRequest(input);
+            if (violations.length > 0) {
+                return {
+                    ok: false,
+                    errorCode: 'PROTOCOL_INVALID',
+                    message: violations.map((v) => `${v.field}: ${v.reason}`).join('; '),
+                };
+            }
+            // 1. 租约与身份核验
+            const resolved = this.core.resolveRuntime(input.runtimeToken);
+            if (!resolved.ok) {
+                return {
+                    ok: false,
+                    errorCode: resolved.code,
+                    message: resolved.message,
+                };
+            }
+            const { lease } = resolved;
+            // 已封存或非活跃状态一律拒绝
+            if (lease.sealed || lease.state !== 'running') {
+                return {
+                    ok: false,
+                    errorCode: 'STALE_RUNTIME',
+                    message: '当前运行实例已封存或未处于活跃状态，禁止执行 AI 请求',
+                };
+            }
+            // 2. 核验 slot 是否在游戏 manifest capabilities 中合法声明
+            const manifest = await this.runtimeManifest(lease);
+            const declaredSlots = manifest?.ai?.slots;
+            if (!declaredSlots || typeof declaredSlots !== 'object' || !(input.slot in declaredSlots)) {
+                return {
+                    ok: false,
+                    errorCode: 'PROTOCOL_INVALID',
+                    message: `游戏 ${lease.gameId} 未声明 AI slot '${input.slot}'`,
+                };
+            }
+            const currentAiLease = this.core.resolveRuntime(input.runtimeToken);
+            if (!currentAiLease.ok || currentAiLease.lease !== lease || lease.sealed || lease.state !== 'running')
+                return { ok: false, errorCode: 'STALE_RUNTIME', message: '读取资源期间会话已暂停或关闭' };
+            // Prefetch is independent of the human build; only the current round ID may enter.
+            const arenaTable = lease.gameId === 'example.cat-arena' ? this.arenaModes.get(lease.runtimeInstanceId) : undefined;
+            if (lease.gameId === 'example.cat-arena') {
+                const raw = input.input;
+                if (input.slot !== 'vehicleBuild' || arenaTable?.mode !== 'duel' || !raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some(k => k !== 'roundId') || raw.roundId !== arenaTable.roundId)
+                    return { ok: false, errorCode: 'PROTOCOL_INVALID', message: 'AI 对战模式或对局编号不匹配' };
+                if (arenaTable.planJson)
+                    return { ok: false, errorCode: 'RATE_LIMIT', message: '对局已开战' };
+                if (arenaTable.operationId && arenaTable.operationId !== input.operationId)
+                    return { ok: false, errorCode: 'RATE_LIMIT', message: '本局装配已锁定；请开始新对局' };
+            }
+            // 3. 作用域隔离与并发单飞防重入：同一 runtimeInstanceId + slot + operationId 隔离
+            const scopeKey = `${lease.runtimeInstanceId}\u0000${lease.gameId}\u0000${input.slot}\u0000${input.operationId}`;
+            const serializedInput = JSON.stringify(input.input);
+            const existing = this.aiOperations.get(scopeKey);
+            if (existing) {
+                if (existing.inputJson !== serializedInput) {
+                    return {
+                        ok: false,
+                        errorCode: 'PROTOCOL_INVALID',
+                        message: `同一 operationId (${input.operationId}) 携带了不同的 input 内容`,
+                    };
+                }
+                return existing.result ?? { ok: true, output: existing.output };
+            }
+            // 在途并发单飞（Single-Flight）：遇到相同在途请求复用 Promise，冲突入参立即拦截
+            const inFlight = this.inFlightAiOperations.get(scopeKey);
+            if (inFlight) {
+                if (inFlight.inputJson !== serializedInput) {
+                    return {
+                        ok: false,
+                        errorCode: 'PROTOCOL_INVALID',
+                        message: `同一 operationId (${input.operationId}) 携带了不同的 input 内容`,
+                    };
+                }
+                return inFlight.promise;
+            }
+            // 4. 零费用防御与 Broker 路由
+            const binding = this.aiBindings.get(`${lease.runtimeInstanceId}\0${input.slot}`);
+            if (!this.aiBroker && !binding) {
+                return {
+                    ok: false,
+                    errorCode: 'CAPABILITY_UNAVAILABLE',
+                    message: 'AI 生成能力暂不可用或未配置模型接入',
+                    retryable: false,
+                };
+            }
+            // 5. 调用受控 Broker 执行（绑定 AbortController 与主动取消）
+            if (signal?.aborted) {
+                return {
+                    ok: false,
+                    errorCode: 'INTERNAL',
+                    message: 'AI 生成请求已被调用方取消',
+                    retryable: false,
+                };
+            }
+            const abortController = new AbortController();
+            let arenaTrace;
+            if (arenaTable) {
+                arenaTable.operationId = input.operationId;
+                arenaTrace = { operationId: input.operationId, status: 'pending', binding: binding ?? { providerId: 'injected', modelId: 'injected' }, request: arenaBuildPrompt(arenaTable.previousRound), response: '', feedback: '等待模型返回', elapsedMs: 0 };
+                arenaTable.traces.push(arenaTrace);
+                if (arenaTable.traces.length > 8)
+                    arenaTable.traces.shift();
+            }
+            if (signal) {
+                signal.addEventListener('abort', () => {
+                    try {
+                        abortController.abort(signal.reason);
+                    }
+                    catch {
+                        // ignore
+                    }
+                }, { once: true });
+            }
+            let instanceSet = this.inFlightAiByRuntimeInstance.get(lease.runtimeInstanceId);
+            if (!instanceSet) {
+                instanceSet = new Set();
+                this.inFlightAiByRuntimeInstance.set(lease.runtimeInstanceId, instanceSet);
+            }
+            instanceSet.add(abortController);
+            lease.expiresAt = new Date(this.core.nowMs() + 150_000).toISOString();
+            const opPromise = (async () => {
+                try {
+                    const generated = this.aiBroker
+                        ? { output: await this.aiBroker(input.slot, input.input, abortController.signal) }
+                        : arenaTable ? await generateArenaBuild(this.hostCtx.llm, binding, abortController.signal, value => { if (arenaTrace)
+                            Object.assign(arenaTrace, value); }, arenaTable.previousRound)
+                            : await generateBoard(this.hostCtx.llm, binding, input.slot, input.input, abortController.signal);
+                    const output = arenaTable ? JSON.parse(JSON.stringify(quoteArenaPlan(generated.output).plan)) : generated.output;
+                    // 成功返回前再次检查租约与取消状态：已作废或已关闭不回写
+                    const recheck = this.core.resolveRuntime(input.runtimeToken);
+                    if (!recheck.ok || recheck.lease.sealed || recheck.lease.state !== 'running' || abortController.signal.aborted || arenaTable && this.arenaModes.get(lease.runtimeInstanceId) !== arenaTable) {
+                        return {
+                            ok: false,
+                            errorCode: 'STALE_RUNTIME',
+                            message: '请求完成时实例已作废或关闭，结果被丢弃',
+                        };
+                    }
+                    if (arenaTable) {
+                        arenaTable.aiPlan = output;
+                        if (arenaTrace && arenaTrace.status === 'pending')
+                            Object.assign(arenaTrace, { status: 'succeeded', response: JSON.stringify(output), feedback: '方案校验通过' });
+                    }
+                    this.aiOperations.set(scopeKey, {
+                        inputJson: serializedInput,
+                        output,
+                        result: { ok: true, ...generated, output },
+                    });
+                    return { ok: true, ...generated, output };
+                }
+                catch (err) {
+                    if (arenaTrace && arenaTrace.status === 'pending')
+                        Object.assign(arenaTrace, { status: abortController.signal.aborted ? 'cancelled' : 'failed', feedback: err instanceof Error ? err.message : '生成失败' });
+                    if (abortController.signal.aborted || err?.name === 'AbortError') {
+                        if (signal?.aborted) {
+                            return {
+                                ok: false,
+                                errorCode: 'INTERNAL',
+                                message: 'AI 生成请求已被调用方取消',
+                                retryable: false,
+                            };
+                        }
+                        return {
+                            ok: false,
+                            errorCode: 'STALE_RUNTIME',
+                            message: '实例已作废或关闭，请求已被取消',
+                            retryable: false,
+                        };
+                    }
+                    return {
+                        ok: false,
+                        errorCode: 'INTERNAL',
+                        message: `AI Broker 执行异常: ${err instanceof Error ? err.message : String(err)}`,
+                        retryable: true,
+                    };
+                }
+                finally {
+                    if (arenaTable && !this.aiOperations.has(scopeKey) && arenaTable.operationId === input.operationId) {
+                        delete arenaTable.operationId;
+                    }
+                    this.inFlightAiOperations.delete(scopeKey);
+                    const set = this.inFlightAiByRuntimeInstance.get(lease.runtimeInstanceId);
+                    if (set) {
+                        set.delete(abortController);
+                        if (set.size === 0) {
+                            this.inFlightAiByRuntimeInstance.delete(lease.runtimeInstanceId);
+                        }
+                    }
+                }
+            })();
+            this.inFlightAiOperations.set(scopeKey, {
+                inputJson: serializedInput,
+                promise: opPromise,
+                abortController,
+            });
+            return opPromise;
         }
     };
 })();
@@ -805,12 +2733,29 @@ export function defineGameCenterService(core, ctx, options = {}) {
     }
     const fullOptions = {
         playerId: options.playerId ?? 'test-host-player',
+        wallet: options.wallet,
         saveStore: options.saveStore ?? new SaveStore(new SqliteSaveBackend({ dbPath: ':memory:' })),
         gameLibraryDir: options.gameLibraryDir ?? path.join(os.tmpdir(), 'dsh-games-test'),
         previewDir: options.previewDir,
         approvals: options.approvals ?? [],
-        catalogMode: options.catalogMode ?? 'fixture',
+        catalogMode: options.catalogMode ?? (options.catalogBaseUrl ? 'remote' : 'github'),
         catalogFixtureEntries: options.catalogFixtureEntries ?? [],
+        catalogRepo: options.catalogRepo ?? DEFAULT_CATALOG_REPO,
+        catalogGithubToken: options.catalogGithubToken,
+        catalogFetcher: options.catalogFetcher,
+        runningVersions: options.runningVersions,
+        dshObservation: options.dshObservation,
+        gameCenterObservation: options.gameCenterObservation,
+        allowedMediaHosts: options.allowedMediaHosts,
+        mediaFetcher: options.mediaFetcher,
+        dnsLookup: options.dnsLookup,
+        mediaSecurityVerified: options.mediaSecurityVerified,
+        manifestResolver: options.manifestResolver,
+        aiBroker: options.aiBroker,
+        catalogBaseUrl: options.catalogBaseUrl,
+        rawBaseUrl: options.rawBaseUrl ?? process.env.DSH_GAMECENTER_RAW_BASE,
+        reportDownloadFailures: options.reportDownloadFailures,
+        installId: options.installId,
     };
     return new GameCenterService(ctx, core, fullOptions);
 }

@@ -65,7 +65,7 @@ function parseMethods(body) {
   //        async modelCatalog(signal: AbortSignal): Promise<ModelCatalogResult> {
   // 只匹配「方法名(参数): 返回类型 {」且不是 if/for/while/switch/catch/new 等关键字。
   const keywords = new Set(['if', 'for', 'while', 'switch', 'catch', 'return', 'function', 'constructor']);
-  const re = /^[ \t]+(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*:\s*[^{]+\{\s*$/gm;
+  const re = /@Remote\s+(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*:[^\n]+\{\s*$/gm;
   let m;
   while ((m = re.exec(body)) !== null) {
     const name = m[1];

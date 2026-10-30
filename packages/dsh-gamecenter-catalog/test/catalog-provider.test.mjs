@@ -227,3 +227,30 @@ test('Provider-5: 对账能够准确识别新增、更新与已下架/删除条�
   assert.equal(rec.removed.length, 1)
   assert.equal(rec.removed[0].issueId, '2')
 })
+
+test('Provider-6: 并发请求 single-flight 合并，多次调用只发起一次底层 HTTP 请求', async () => {
+  let fetchCount = 0
+  const mockFetcher = async () => {
+    fetchCount++
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    return new Response(JSON.stringify([makeMockIssue(1)]), { status: 200 })
+  }
+
+  const provider = new GitHubCatalogProvider({
+    owner: 'example',
+    repo: 'game-catalog',
+    fetcher: mockFetcher,
+  })
+
+  // 同时并发发起 3 次拉取
+  const [res1, res2, res3] = await Promise.all([
+    provider.fetchEntries(),
+    provider.fetchEntries(),
+    provider.fetchEntries(),
+  ])
+
+  assert.equal(fetchCount, 1, '并发调用必须由 single-flight 去重合并为单次网络请求')
+  assert.equal(res1.entries.length, 1)
+  assert.equal(res2.entries.length, 1)
+  assert.equal(res3.entries.length, 1)
+})

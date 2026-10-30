@@ -67,6 +67,8 @@ export interface ModelCapabilityEntry {
   /** ISO 8601 时间戳。 */
   verifiedAt: string
   adapterVersion: string
+  name?: string
+  reasoning?: { efforts: { id: string; name: string }[]; defaultEffort?: string }
 }
 
 /** 单个 slot 的匹配结果。 */

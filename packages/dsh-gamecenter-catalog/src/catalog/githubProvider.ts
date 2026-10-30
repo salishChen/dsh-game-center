@@ -16,6 +16,7 @@ import { mergeCatalogEntries } from './cacheStore.js'
 export type HttpFetcher = (url: string, init?: RequestInit) => Promise<Response>
 
 export interface GitHubCatalogProviderOptions {
+  scopeKey?: string
   owner: string
   repo: string
   fetcher?: HttpFetcher | undefined
@@ -32,6 +33,7 @@ export class GitHubCatalogProvider implements CatalogProvider {
   private readonly cacheStore?: ICatalogCacheStore | undefined
   private readonly token?: string | undefined
   private readonly apiBaseUrl: string
+  private readonly inFlight = new Map<string, Promise<CatalogFetchResult>>()
 
   constructor(options: GitHubCatalogProviderOptions) {
     this.owner = options.owner
@@ -43,6 +45,21 @@ export class GitHubCatalogProvider implements CatalogProvider {
   }
 
   async fetchEntries(options: CatalogFetchOptions = {}): Promise<CatalogFetchResult> {
+    const flightKey = `${options.cursor ?? ''}:${options.since ?? ''}:${options.ifNoneMatch ?? ''}:${options.ifModifiedSince ?? ''}`
+    const active = this.inFlight.get(flightKey)
+    if (active) {
+      return active
+    }
+    const task = this.doFetchEntries(options)
+    this.inFlight.set(flightKey, task)
+    try {
+      return await task
+    } finally {
+      this.inFlight.delete(flightKey)
+    }
+  }
+
+  private async doFetchEntries(options: CatalogFetchOptions): Promise<CatalogFetchResult> {
     const url = new URL(`${this.apiBaseUrl}/repos/${this.owner}/${this.repo}/issues`)
     url.searchParams.set('state', 'open')
     url.searchParams.set('per_page', '50')
@@ -53,6 +70,16 @@ export class GitHubCatalogProvider implements CatalogProvider {
       url.searchParams.set('page', options.cursor)
     }
 
+    let ifNoneMatch = options.ifNoneMatch
+    let ifModifiedSince = options.ifModifiedSince
+    if (!ifNoneMatch && !ifModifiedSince && this.cacheStore) {
+      const cached = await this.cacheStore.load()
+      if (cached) {
+        if (cached.etag) ifNoneMatch = cached.etag
+        if (cached.lastModified) ifModifiedSince = cached.lastModified
+      }
+    }
+
     const headers: Record<string, string> = {
       Accept: 'application/vnd.github.v3+json',
       'User-Agent': 'dsh-gamecenter-catalog',
@@ -60,11 +87,11 @@ export class GitHubCatalogProvider implements CatalogProvider {
     if (this.token) {
       headers['Authorization'] = `token ${this.token}`
     }
-    if (options.ifNoneMatch) {
-      headers['If-None-Match'] = options.ifNoneMatch
+    if (ifNoneMatch) {
+      headers['If-None-Match'] = ifNoneMatch
     }
-    if (options.ifModifiedSince) {
-      headers['If-Modified-Since'] = options.ifModifiedSince
+    if (ifModifiedSince) {
+      headers['If-Modified-Since'] = ifModifiedSince
     }
 
     let response: Response
@@ -83,6 +110,8 @@ export class GitHubCatalogProvider implements CatalogProvider {
             etag: cached.etag,
             lastModified: cached.lastModified,
             notModified: true,
+            offline: true,
+            error: {code:'INTERNAL', message:err instanceof Error ? err.message : String(err)},
           }
         }
       }
@@ -92,10 +121,11 @@ export class GitHubCatalogProvider implements CatalogProvider {
     // 304 Not Modified
     if (response.status === 304) {
       const cached = this.cacheStore ? await this.cacheStore.load() : null
+      if (cached && this.cacheStore) await this.cacheStore.save({...cached, fetchedAt:new Date().toISOString()})
       return {
         entries: cached ? cached.entries : [],
-        etag: options.ifNoneMatch,
-        lastModified: options.ifModifiedSince,
+        etag: ifNoneMatch,
+        lastModified: ifModifiedSince,
         notModified: true,
       }
     }

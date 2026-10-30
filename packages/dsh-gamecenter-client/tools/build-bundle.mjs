@@ -65,7 +65,7 @@ const result = await build({
   charset: 'utf8',
   logLevel: 'info',
   // 浏览器半用的是 JSDoc 类型，esbuild 不做类型检查（由 tsc 负责）。
-  loader: { '.js': 'js' },
+  loader: { '.js': 'js', '.webp': 'dataurl' },
 });
 
 const body = result.outputFiles[0].text;

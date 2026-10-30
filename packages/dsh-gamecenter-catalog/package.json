@@ -20,7 +20,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsc -p tsconfig.build.json && node --test test/*.test.mjs"
+    "test": "tsc -p tsconfig.build.json && node --test --test-timeout=15000 test/*.test.mjs"
   },
   "dependencies": {
     "@dsh-gamecenter/protocol": "workspace:*"

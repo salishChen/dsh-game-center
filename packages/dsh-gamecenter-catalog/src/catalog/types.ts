@@ -35,6 +35,8 @@ export interface CatalogFetchResult {
   etag?: string | undefined
   lastModified?: string | undefined
   notModified?: boolean | undefined
+  offline?: boolean
+  error?: {code:string; message:string}
 }
 
 export interface CatalogReconciliationResult {
@@ -44,9 +46,16 @@ export interface CatalogReconciliationResult {
 }
 
 export interface CatalogProvider {
-  readonly forge: 'github' | 'gitee'
-  readonly owner: string
-  readonly repo: string
+  /**
+   * 发现来源。`remote` 表示条目由后台聚合后经 HTTP 下发（阶段 3），
+   * 条目自身的来源身份仍是 `CatalogSourceKey` 里的 github/gitee。
+   */
+  readonly forge: 'github' | 'gitee' | 'remote'
+  /** 目录仓库归属；远端目录没有仓库归属，可省略。 */
+  readonly owner?: string | undefined
+  readonly repo?: string | undefined
+  /** 该来源在本地缓存里的稳定标识（远端为后台地址的稳定摘要）。 */
+  readonly scopeKey?: string | undefined
 
   /** 同步目录条目（支持分页、条件请求与增量窗口） */
   fetchEntries(options?: CatalogFetchOptions): Promise<CatalogFetchResult>

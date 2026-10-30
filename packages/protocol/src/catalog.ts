@@ -7,6 +7,7 @@
  */
 
 import type { JsonValue } from './json.js'
+import type { CatalogDisplayMetadata } from './catalogMetadata.js'
 
 /** 固定提交内的发布元组；Issue 中展示的部分必须与之逐字节一致。 */
 export interface CatalogReleaseRef {
@@ -29,8 +30,11 @@ export interface CatalogMachineEntry {
   gameId: string
   title: string
   summary: string
+  /** 1–3 categories for new listings. Missing on legacy entries means uncategorized. */
+  categories?: string[]
   version: string
   source: CatalogReleaseRef
+  display?: CatalogDisplayMetadata | undefined
 }
 
 /** 目录来源身份：不依赖 Issue 标题，也不假设 Gitee 的 issue 标识是数字。 */
@@ -113,4 +117,8 @@ export interface CatalogEntryView {
   fetchedAt: string
   /** 原始机器块的可校验副本，便于对账。 */
   raw: JsonValue
+  /** 发布或更新时间戳（ISO 8601，可选）。供前端按时间排序。 */
+  updatedAt?: string | undefined
+  /** 下载与安装统计（可选）。供前端展示与按下载量排序。 */
+  stats?: { downloads?: number; installs?: number } | undefined
 }

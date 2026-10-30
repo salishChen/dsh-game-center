@@ -84,7 +84,7 @@ export function assembleGameDocument({ entryPath, files, options }: {
     };
 }): string;
 export const GAME_IFRAME_SANDBOX: "allow-scripts";
-export const GAME_DOCUMENT_CSP: "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'";
+export const GAME_DOCUMENT_CSP: "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'";
 export const GAME_BUNDLE_MAX_FILES: 64;
 export const GAME_BUNDLE_MAX_FILE_BYTES: number;
 export const GAME_BUNDLE_MAX_TOTAL_BYTES: number;

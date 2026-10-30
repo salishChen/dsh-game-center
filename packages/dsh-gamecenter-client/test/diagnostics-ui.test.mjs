@@ -198,7 +198,7 @@ test('UI 集成测试：staging 产物中的诊断区组件挂载与点击事件
 
   const vdomOverlay = overlayEntry.component(props);
   const dialog = vdomOverlay.props.children.find((c) => c && c.props?.['data-gamecenter-dialog'] !== undefined);
-  const diagNode = dialog.props.children.find((c) => c && typeof c.type === 'function');
+  const diagNode = dialog.props.children.find((c) => c && typeof c.type === 'function' && 'runDiagnostics' in c.props);
   assert.ok(diagNode, 'GameCenterOverlay 内部必须渲染 RemoteDiagnostics 组件节点');
 
   const rowsEmitted = [];
@@ -262,7 +262,7 @@ test('UI 负例测试：快速连续点击重试时，旧轮次立即被 abort�
   props.overlay.open = true;
   const vdomOverlay = overlayEntry.component(props);
   const dialog = vdomOverlay.props.children.find((c) => c && c.props?.['data-gamecenter-dialog'] !== undefined);
-  const diagNode = dialog.props.children.find((c) => c && typeof c.type === 'function');
+  const diagNode = dialog.props.children.find((c) => c && typeof c.type === 'function' && 'runDiagnostics' in c.props);
 
   const abortedSignals = [];
   const completedRuns = [];
@@ -323,7 +323,7 @@ test('UI 负例测试：组件卸载生命周期必须触发 abort 终止后台�
   props.overlay.open = true;
   const vdomOverlay = overlayEntry.component(props);
   const dialog = vdomOverlay.props.children.find((c) => c && c.props?.['data-gamecenter-dialog'] !== undefined);
-  const diagNode = dialog.props.children.find((c) => c && typeof c.type === 'function');
+  const diagNode = dialog.props.children.find((c) => c && typeof c.type === 'function' && 'runDiagnostics' in c.props);
 
   let wasAbortedOnUnmount = false;
   diagNode.props.runDiagnostics = async ({ signal }) => {
@@ -372,7 +372,7 @@ test('UI 负例测试：getService 抛异常时错误必须在界面可见（绝
 
   const vdomOverlay = overlayEntry.component(props);
   const dialog = vdomOverlay.props.children.find((c) => c && c.props?.['data-gamecenter-dialog'] !== undefined);
-  const diagNode = dialog.props.children.find((c) => c && typeof c.type === 'function');
+  const diagNode = dialog.props.children.find((c) => c && typeof c.type === 'function' && 'runDiagnostics' in c.props);
   assert.ok(diagNode);
 
   // 注入故意崩溃的 getService

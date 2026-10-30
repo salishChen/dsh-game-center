@@ -14,9 +14,12 @@ export const BRIDGE_METHODS = [
   'handshake',
   'ai.generate',
   'ai.cancel',
+  'game.command',
+  'wallet.command',
   'save.checkpoint',
   'lifecycle.ready',
   'lifecycle.pauseAck',
+  'lifecycle.controlAck',
 ] as const
 
 export type BridgeMethod = (typeof BRIDGE_METHODS)[number]
@@ -33,9 +36,7 @@ export interface AiGenerateRequest {
   operation: AIOperation
   /** 只在 {player, gameId, saveId} 范围内有意义，由宿主组合成幂等键。 */
   operationId: string
-  messages: GameMessage[]
-  /** 期望的结构化输出；不意味着每个 provider 都有原生结构化输出。 */
-  responseSchema?: JsonValue
+  input: JsonValue
 }
 
 export interface AiGenerateResult {
@@ -43,7 +44,7 @@ export interface AiGenerateResult {
   /** 经宿主验证后的文本或结构化载荷；不是可执行代码。 */
   output: JsonValue
   /** 实际 provider/model，用于界面显示与审计。 */
-  binding: { providerId: string; modelId: string }
+  binding: { providerId: string; modelId: string; reasoningEffort?: string }
   /** 是否由原生结构化输出产生（false 表示返回后验证）。 */
   structuredNative: boolean
 }
@@ -116,6 +117,8 @@ export interface HandshakeRequest {
   launchToken: string
   /** 游戏自报 id 与版本，仅作交叉校验；权威值来自 Host 已安装版本。 */
   gameId: string
+  commit?: string
+  previewId?: string
   gameVersion: string
   sdkVersion: string
   bridgeVersion: 1
@@ -216,6 +219,58 @@ export function validateAbandonRuntimeRequest(input: unknown): WireViolationLike
 export interface WireViolationLike {
   field: string
   reason: string
+}
+
+// ————————————————————————————————————————————————————————————————
+// Host → 游戏 推送事件（已配对 MessagePort，非请求/响应）
+// ————————————————————————————————————————————————————————————————
+
+/**
+ * Host → 游戏 单向推送事件白名单（阶段1 最小集）。
+ * 与 `InboundEnvelope`（游戏→Host 请求）/ `OutboundEnvelope`（Host→游戏 响应）并列，
+ * 走同一已配对 MessagePort，但方向固定、无 requestId 配对语义。
+ */
+export const HOST_PUSH_EVENTS = ['theme'] as const
+
+export type HostPushEventName = (typeof HOST_PUSH_EVENTS)[number]
+
+/** 主题模式：只允许浅色 / 深色。 */
+export const THEME_MODES = ['light', 'dark'] as const
+
+export type ThemeMode = (typeof THEME_MODES)[number]
+
+/** 主题推送载荷。DSH 应用主题**优先**于操作系统偏好。 */
+export interface ThemePushPayload {
+  mode: ThemeMode
+  /** 值来源：'dsh'=DSH 应用显式主题；'os'=无显式主题时回落到操作系统偏好。 */
+  source: 'dsh' | 'os'
+}
+
+/**
+ * Host → 游戏 推送信封（判别联合，新增事件在此扩展）。
+ * `seq` 为单增序号，游戏据此丢弃乱序/重复推送。
+ */
+export type HostPushEnvelope =
+  | { kind: 'host.push'; event: 'theme'; seq: number; payload: ThemePushPayload }
+
+export function isThemeMode(value: unknown): value is ThemeMode {
+  return typeof value === 'string' && (THEME_MODES as readonly string[]).includes(value)
+}
+
+/** 校验主题推送载荷；只做形状校验，不承载任何身份/凭据。 */
+export function validateThemePushPayload(input: unknown): input is ThemePushPayload {
+  if (typeof input !== 'object' || input === null) return false
+  const raw = input as Record<string, unknown>
+  return isThemeMode(raw.mode) && (raw.source === 'dsh' || raw.source === 'os')
+}
+
+/** 校验一条 Host → 游戏 推送信封；未知事件/非法载荷一律拒绝（fail closed）。 */
+export function validateHostPushEnvelope(input: unknown): input is HostPushEnvelope {
+  if (typeof input !== 'object' || input === null) return false
+  const raw = input as Record<string, unknown>
+  if (raw.kind !== 'host.push' || typeof raw.seq !== 'number' || !Number.isSafeInteger(raw.seq)) return false
+  if (raw.event === 'theme') return validateThemePushPayload(raw.payload)
+  return false
 }
 
 /**

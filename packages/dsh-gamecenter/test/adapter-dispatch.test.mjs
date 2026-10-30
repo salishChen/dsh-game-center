@@ -70,7 +70,7 @@ test('生产入口向 Cordis 注册 gameCenter 服务且具备 typertRemote', ()
   assert.equal(service.typertRemote?.serviceKey, 'gameCenter')
 })
 
-test('生产入口装配后，Gateway collectSrcClaims 必须认领全部 13 个端点', () => {
+test('生产入口装配后，Gateway collectSrcClaims 必须认领全部 15 个端点', () => {
   const root = new Context()
   apply(root, {
     playerId: 'test-player',
@@ -79,11 +79,22 @@ test('生产入口装配后，Gateway collectSrcClaims 必须认领全部 13 个
   const claims = collectSrcClaims(root)
   assert.deepEqual(claims, [
     'gameCenter/abandonRuntime',
+    'gameCenter/aiGenerate',
+    'gameCenter/setAiBinding',
+    'gameCenter/suspendRuntime',
+    'gameCenter/resumeRuntime',
+    'gameCenter/cancelAi',
+    'gameCenter/landlordAction',
+    'gameCenter/walletStatus',
+    'gameCenter/walletAction',
+    'gameCenter/arenaAction',
     'gameCenter/catalogInstall',
+    'gameCenter/catalogUninstall',
     'gameCenter/catalogList',
     'gameCenter/gameBundle',
     'gameCenter/handshake',
     'gameCenter/leaseStatus',
+    'gameCenter/mediaFetch',
     'gameCenter/modelCatalog',
     'gameCenter/pause',
     'gameCenter/previewBundle',
@@ -91,7 +102,7 @@ test('生产入口装配后，Gateway collectSrcClaims 必须认领全部 13 个
     'gameCenter/saveAck',
     'gameCenter/saveCheckpoint',
     'gameCenter/saveLatest',
-  ])
+  ].sort())
 })
 
 test('apply 对非 Cordis 上下文抛错，不静默空转', () => {

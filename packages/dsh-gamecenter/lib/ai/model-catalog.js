@@ -13,6 +13,8 @@
  */
 /** 允许出现在投影结果里的字段（白名单）。 */
 const ALLOWED_ENTRY_KEYS = [
+    'name',
+    'reasoning',
     'providerId',
     'modelId',
     'adapterId',
@@ -155,8 +157,23 @@ export async function readModelCatalog(llm, adapterId = 'dsh-llm') {
             const models = await llm.listModels(providerId);
             for (const model of models) {
                 const entry = projectModelEntry({ providerId, model, adapterId });
-                if (entry !== null)
+                if (entry !== null) {
+                    try {
+                        if (llm.resolveModelInfo) {
+                            const info = await llm.resolveModelInfo(providerId, entry.modelId);
+                            if (typeof info.name === 'string')
+                                entry.name = info.name;
+                            if (info.reasoning && Array.isArray(info.reasoning.efforts)) {
+                                entry.reasoning = { efforts: info.reasoning.efforts.filter((e) => typeof e.id === 'string' && typeof e.name === 'string').map((e) => ({ id: e.id, name: e.name })),
+                                    ...(typeof info.reasoning.defaultEffort === 'string' ? { defaultEffort: info.reasoning.defaultEffort } : {}) };
+                            }
+                        }
+                    }
+                    catch (error) {
+                        failures.push({ providerId, error: errorText(error) });
+                    }
                     entries.push(entry);
+                }
             }
         }
         catch (error) {

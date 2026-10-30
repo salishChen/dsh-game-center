@@ -70,6 +70,15 @@ export interface TypertGatewayLike {
  * 因此这里只声明形状，实际可用性为 `AUTH-PENDING`。
  */
 export interface DshLlmLike {
+    resolveModelInfo?(provider: string, model: string, signal?: AbortSignal): Promise<any>;
+    prepareCall?(config: {
+        provider: string;
+        model: string;
+        reasoningEffort?: string;
+    }, signal?: AbortSignal): Promise<{
+        config: any;
+        stream(options: any): AsyncIterable<any>;
+    }>;
     listProviders(): Promise<unknown[]>;
     listModels(provider: string): Promise<unknown[]>;
 }

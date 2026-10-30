@@ -12,7 +12,7 @@
 declare module 'node:crypto' {
   /** 增量哈希对象（只声明本包用到的两个方法）。 */
   export interface Hash {
-    update(data: string, inputEncoding?: 'utf8'): Hash
+    update(data: string | Uint8Array, inputEncoding?: 'utf8'): Hash
     digest(encoding: 'hex'): string
   }
 

@@ -4,6 +4,7 @@
  * @property {any} slots
  * @property {any} locale
  * @property {any} [remote]
+ * @property {any} [theme] DSH 主题服务（`ctx.provide('theme')` 注入，v3 主题通道）
  * @property {(name: string) => any} [get]
  * @property {any} [reflect]
  * @property {(fn: () => void | (() => void), label: string) => void} effect
@@ -28,6 +29,10 @@ export type ClientContext = {
     slots: any;
     locale: any;
     remote?: any;
+    /**
+     * DSH 主题服务（`ctx.provide('theme')` 注入，v3 主题通道）
+     */
+    theme?: any;
     get?: (name: string) => any;
     reflect?: any;
     effect: (fn: () => void | (() => void), label: string) => void;

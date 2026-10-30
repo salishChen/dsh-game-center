@@ -103,7 +103,7 @@ export type BridgeAdmission = {
     code?: string;
     message?: string;
 };
-export type RuntimeState = "idle" | "starting" | "running" | "pausing" | "paused" | "recovery-available" | "finished" | "destroyed";
+export type RuntimeState = "idle" | "starting" | "running" | "suspended" | "pausing" | "paused" | "recovery-available" | "finished" | "destroyed";
 export type RuntimeLease = {
     /**
      * 已安装版本的权威 gameId（不接受游戏自报值）

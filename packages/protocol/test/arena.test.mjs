@@ -1,0 +1,8 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {quoteArenaPlan,ARENA_DUEL_BUDGET} from '../dist/index.js';
+const plan=()=>({body:'classic',bodyLevel:1,mounts:{'wheel-rear':{partId:'roller',level:1},'wheel-front':{partId:'bigfoot',level:1},'weapon-front':{partId:'blade',level:1}}});
+test('arena quote keeps chassis and wheel installation free while charging independent upgrades',()=>{const p=plan();p.bodyLevel=2;p.mounts['wheel-rear'].level=2;const q=quoteArenaPlan(p);assert.equal(q.cost,30+30+30);assert.equal(q.remaining,ARENA_DUEL_BUDGET-q.cost);assert.equal(q.build.powerBonus,0);assert.equal(q.build.slotLevels['wheel-front'],1);assert.equal(q.build.slotLevels['wheel-rear'],2);});
+test('arena rejects overspend, bonus injection, bad types and impossible power before battle',()=>{
+  for(const p of [{...plan(),bodyLevel:5,mounts:{...plan().mounts,'weapon-front':{partId:'blade',level:2}}},{...plan(),powerBonus:100},{...plan(),budget:1000},{...plan(),mounts:{...plan().mounts,'weapon-front':{partId:'repair',level:1}}},{...plan(),mounts:{...plan().mounts,'weapon-front':{partId:'laser',level:1},'weapon-top':{partId:'rocket',level:1}}},{...plan(),mounts:{'wheel-front':{partId:'roller',level:1}}},{...plan(),mounts:{...plan().mounts,'unknown-slot':null}},{...plan(),body:'toString'},{...plan(),mounts:{...plan().mounts,'weapon-front':{partId:'blade',level:1,cost:0}}}])assert.throws(()=>quoteArenaPlan(p));
+});
+test('arena edit quote permits incomplete chassis but lock requires two wheels and a weapon',()=>{const p={body:'classic',bodyLevel:1,mounts:{}};assert.equal(quoteArenaPlan(p,false).cost,0);assert.throws(()=>quoteArenaPlan(p),/两个轮子/);});

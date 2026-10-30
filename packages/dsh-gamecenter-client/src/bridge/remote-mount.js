@@ -84,11 +84,22 @@ const METHODS_WITH_INPUT = [
   'leaseStatus',
   'catalogList',
   'catalogInstall',
+  'catalogUninstall',
   'gameBundle',
   'saveLatest',
   'saveCheckpoint',
   'previewBundle',
   'abandonRuntime',
+  // 受控媒体拉取：Host 校验 mime/sha256/体积上限后返回字节。
+  // 游戏封面/截图必须走这条路，Client 不得在 iframe 里直接外链跨域资源。
+  'mediaFetch',
+  'walletStatus',
+  'walletAction',
+  'arenaAction',
+  'setAiBinding',
+  'suspendRuntime',
+  'resumeRuntime',
+  'cancelAi',
 ];
 
 /**
@@ -159,6 +170,26 @@ export function createGameCenterContribution() {
   });
 
   // previewList 无业务参数
+  descriptors.push({
+    id: '@dsh-gamecenter/client#gameCenter.landlordAction', service: SERVICE_KEY, namespace: 'gameCenter',
+    method: 'landlordAction', invocation: { kind: 'direct' },
+    parameters: [{name:'input',wire:'input',source:'json',codec:strictCodec('landlordAction.input')}],
+    result: strictCodec('landlordAction.result'), cancellation: {parameter:'signal'},
+  });
+  // aiGenerate 是业务方法，但 Host 侧末位形参是 AbortSignal（取消/关闭时中断底层
+  // Broker 调用），因此必须显式声明 cancellation；否则 wire 契约对账会报
+  // "Host 末位形参是 signal=true，Client 声明 cancellation=false"。
+  descriptors.push({
+    id: '@dsh-gamecenter/client#gameCenter.aiGenerate',
+    service: SERVICE_KEY,
+    namespace: 'gameCenter',
+    method: 'aiGenerate',
+    invocation: { kind: 'direct' },
+    parameters: [{ name: 'input', wire: 'input', source: 'json', codec: strictCodec('aiGenerate.input') }],
+    result: strictCodec('aiGenerate.result'),
+    cancellation: { parameter: 'signal' },
+  });
+
   descriptors.push({
     id: '@dsh-gamecenter/client#gameCenter.previewList',
     service: SERVICE_KEY,
@@ -437,7 +468,7 @@ export function remoteFailureOf(result) {
  * 五个方法的 Client 侧包装：把 Host 的失败形状统一成抛异常，或返回原始结果。
  *
  * @param {any} remoteService `ctx.remote.gameCenter`（挂载成功后才有）
- * @returns {{handshake: Function, pause: Function, saveAck: Function, leaseStatus: Function, modelCatalog: Function, catalogList: Function, catalogInstall: Function, gameBundle: Function, saveLatest: Function, saveCheckpoint: Function, previewList: Function, previewBundle: Function, abandonRuntime: Function}}
+ * @returns {{arenaAction: Function, walletStatus: Function, walletAction: Function, landlordAction: Function, setAiBinding: Function, suspendRuntime: Function, resumeRuntime: Function, cancelAi: Function, handshake: Function, pause: Function, saveAck: Function, leaseStatus: Function, modelCatalog: Function, catalogList: Function, catalogInstall: Function, gameBundle: Function, saveLatest: Function, saveCheckpoint: Function, previewList: Function, previewBundle: Function, abandonRuntime: Function, mediaFetch: Function, aiGenerate: Function}}
  */
 export function createGameCenterClient(remoteService) {
   /**
@@ -497,10 +528,20 @@ export function createGameCenterClient(remoteService) {
     leaseStatus: (input) => call('leaseStatus', [input]),
     /** @returns {Promise<any>} */
     modelCatalog: () => call('modelCatalog', []),
+    setAiBinding: (/** @type {any} */ input) => call('setAiBinding', [input]),
+    suspendRuntime: (/** @type {any} */ input) => call('suspendRuntime', [input]),
+    resumeRuntime: (/** @type {any} */ input) => call('resumeRuntime', [input]),
+    cancelAi: (/** @type {any} */ input) => call('cancelAi', [input]),
+    walletStatus: (/** @type {any} */ input) => call('walletStatus', [input]),
+    walletAction: (/** @type {any} */ input) => call('walletAction', [input]),
+    arenaAction: (/** @type {any} */ input) => call('arenaAction', [input]),
+    landlordAction: (/** @type {any} */ input, /** @type {AbortSignal | undefined} */ signal) => call('landlordAction', [input, signal]),
     /** @param {any} [input] @returns {Promise<any>} */
     catalogList: (input) => call('catalogList', [input ?? {}]),
     /** @param {any} input @returns {Promise<any>} */
     catalogInstall: (input) => call('catalogInstall', [input]),
+    /** @param {any} input @returns {Promise<any>} */
+    catalogUninstall: (input) => call('catalogUninstall', [input]),
     /** @param {any} input @returns {Promise<any>} */
     gameBundle: (input) => call('gameBundle', [input]),
     /** @param {any} input @returns {Promise<any>} */
@@ -518,5 +559,23 @@ export function createGameCenterClient(remoteService) {
      * @param {{launchToken: string, runtimeInstanceId: string}} input @returns {Promise<any>}
      */
     abandonRuntime: (input) => call('abandonRuntime', [input]),
+    /**
+     * 受控媒体拉取：把游戏元数据里的图片 URL 交给 Host 校验后取回字节。
+     * Host 侧强制：仅 https + host 白名单、mime 仅 png/jpeg/webp/gif（禁 SVG）、
+     * sha256 逐字节比对、单图 ≤2MiB、单边 ≤4096。任一条不满足即拒，不下发。
+     * @param {{url: string, sha256?: string, mime?: string, gameId?: string}} input
+     * @returns {Promise<any>}
+     */
+    mediaFetch: (input) => call('mediaFetch', [input]),
+    /**
+     * AI 生成：输入固定 `{ runtimeToken, operationId, slot, input }`。
+     * 未授权/未配置时 Host 返回 `CAPABILITY_UNAVAILABLE`，Client 不伪造成功；
+     * 成功返回的 output 仍需游戏自己按 schema 校验（平台不代替游戏判定玩法合法性）。
+     * @param {{runtimeToken: string, operationId: string, slot: string, input: any}} input
+     * @param {AbortSignal} [signal] 取消信号：Host 末位形参是 AbortSignal，
+     *   关闭/暂停时由 Client 触发 abort，Host 据此中断底层 Broker。
+     * @returns {Promise<any>}
+     */
+    aiGenerate: (input, signal) => call('aiGenerate', [input, signal]),
   };
 }

@@ -28,6 +28,8 @@ import type { DshLlmLike } from '../dsh-adapter/context.js'
 
 /** 允许出现在投影结果里的字段（白名单）。 */
 const ALLOWED_ENTRY_KEYS = [
+  'name',
+  'reasoning',
   'providerId',
   'modelId',
   'adapterId',
@@ -191,7 +193,19 @@ export async function readModelCatalog(
       const models = await llm.listModels(providerId)
       for (const model of models) {
         const entry = projectModelEntry({ providerId, model, adapterId })
-        if (entry !== null) entries.push(entry)
+        if (entry !== null) {
+          try {
+            if (llm.resolveModelInfo) {
+              const info = await llm.resolveModelInfo(providerId, entry.modelId)
+              if (typeof info.name === 'string') entry.name = info.name
+              if (info.reasoning && Array.isArray(info.reasoning.efforts)) {
+                entry.reasoning = { efforts: info.reasoning.efforts.filter((e: any) => typeof e.id === 'string' && typeof e.name === 'string').map((e: any) => ({id:e.id, name:e.name})),
+                  ...(typeof info.reasoning.defaultEffort === 'string' ? {defaultEffort:info.reasoning.defaultEffort} : {}) }
+              }
+            }
+          } catch (error) { failures.push({ providerId, error: errorText(error) }) }
+          entries.push(entry)
+        }
       }
     } catch (error) {
       failures.push({ providerId, error: errorText(error) })

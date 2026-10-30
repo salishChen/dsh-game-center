@@ -5,18 +5,31 @@
   "description": "iframe -> Bridge 的唯一入站信封。方法白名单之外的 method 一律 PROTOCOL_INVALID。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["bridgeVersion", "requestId", "method", "payload"],
+  "required": [
+    "bridgeVersion",
+    "requestId",
+    "method",
+    "payload"
+  ],
   "properties": {
-    "bridgeVersion": { "const": 1 },
-    "requestId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" },
+    "bridgeVersion": {
+      "const": 1
+    },
+    "requestId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$"
+    },
     "method": {
       "enum": [
         "handshake",
         "ai.generate",
         "ai.cancel",
+        "game.command",
+        "wallet.command",
         "save.checkpoint",
         "lifecycle.ready",
-        "lifecycle.pauseAck"
+        "lifecycle.pauseAck",
+        "lifecycle.controlAck"
       ]
     },
     "payload": {}

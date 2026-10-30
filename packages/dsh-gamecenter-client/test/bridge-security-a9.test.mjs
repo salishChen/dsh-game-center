@@ -334,22 +334,23 @@ test('A9-9 频率超限拦截：错误码必须为 RATE_LIMIT（与 protocol ERR
   h.close();
 });
 
-test('A9-10 零真实模型调用断言：Dispatcher 严禁调用真实模型且默认返回确定性 fixture', async () => {
-  // 不提供自定义 onAiGenerate，测试默认 fixture 处理
+test('A9-10 零真实模型调用断言：Dispatcher 严禁调用真实模型，未装配转发时必须明确失败', async () => {
+  // 不提供自定义 onAiGenerate：2026-10-21 起不再伪造 fixture 成功，
+  // 因为游戏的 schema 校验必然拒绝那条纯文本，玩家看到的是静默降级/报错。
   const defaultDispatcherHarness = setupBridgeHarness({}, { onAiGenerate: null });
 
-  // 1. 验证默认 ai.generate 返回确定性 fixture
+  // 1. 未装配转发 → 明确失败（CAPABILITY_UNAVAILABLE），不得返回成功信封
   const res1 = await sendBridgeMessage(defaultDispatcherHarness.clientPort, {
     bridgeVersion: 1,
-    requestId: 'ai-fixture-01',
+    requestId: 'ai-no-forward-01',
     method: 'ai.generate',
     payload: { slot: 'minesweeper', operationId: 'op-fixed-1' },
   });
 
-  assert.equal(res1.ok, true);
-  assert.equal(res1.payload.operationId, 'op-fixed-1');
-  assert.deepEqual(res1.payload.output, { text: 'AI生成对局完成（阶段1 fixture）' });
-  assert.equal(res1.payload.binding.providerId, 'fixture');
+  assert.equal(res1.ok, false, '未装配 AI 转发时不得返回成功信封');
+  assert.equal(res1.error.code, 'CAPABILITY_UNAVAILABLE', '错误码必须与 protocol 权威定义一致');
+  assert.equal(res1.error.retryable, false);
+  assert.equal(JSON.stringify(res1).includes('fixture'), false, '不得再出现 fixture 伪成功文本');
 
   // 2. 静态断言：dispatcher.js 源码中绝无任何 .stream( 或真实模型服务引用
   const { readFileSync } = await import('node:fs');

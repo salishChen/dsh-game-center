@@ -78,7 +78,7 @@ async function loadMinesweeperEngine() {
   return mod.MinesweeperEngine;
 }
 
-test('生产接线端到端闭环：目录 -> 安装 -> 组装内联文档 -> 握手与端口传递 -> 扫雷操作 -> 暂停确认 -> 重开恢复同进度', async () => {
+test('生产接线端到端闭环：目录 -> 安装 -> 组装内联文档 -> 握手与端口传递 -> 可存档 fixture 操作 -> 暂停确认 -> 重开恢复同进度', async () => {
   const MinesweeperEngine = await loadMinesweeperEngine();
   const { SaveStore, SqliteSaveBackend, GameCenterCore, defineGameCenterService, Context, createGameCenterClient } =
     await loadHostStorage();
@@ -86,7 +86,7 @@ test('生产接线端到端闭环：目录 -> 安装 -> 组装内联文档 -> �
   const dbPath = path.join(tmpDir, 'saves.db');
   const store = new SaveStore(new SqliteSaveBackend({ dbPath }));
 
-  const GAME_ID = 'example.minesweeping';
+  const GAME_ID = 'example.checkpoint-fixture';
   const COMMIT = 'e4905dbe4a738a8406b39013292d6a545ab3a356';
   const PLAYER_ID = 'player-prod-01';
 
@@ -103,6 +103,7 @@ test('生产接线端到端闭环：目录 -> 安装 -> 组装内联文档 -> �
     playerId: PLAYER_ID,
     saveStore: store,
     gameLibraryDir: tmpDir,
+    manifestResolver:async()=>({schemaVersion:1,id:GAME_ID,version:'1.0.0',save:{schemaVersion:1,supportsResume:true,checkpointPolicy:'each-action'}}),
   });
   const remoteClient = createGameCenterClient(service);
 
@@ -210,6 +211,7 @@ test('生产接线端到端闭环：目录 -> 安装 -> 组装内联文档 -> �
           elapsedGameMs: input.elapsedGameMs,
           rngState: input.rngState,
           generation: leaseA.generation,
+          installedCommit:COMMIT,
         });
         assert.equal(res.ok, true, 'Remote saveCheckpoint 必须成功');
         return {
@@ -334,6 +336,7 @@ test('生产接线端到端闭环：目录 -> 安装 -> 组装内联文档 -> �
           elapsedGameMs: input.elapsedGameMs,
           rngState: input.rngState,
           generation: leaseB.generation,
+          installedCommit:COMMIT,
         });
         assert.equal(res.ok, true);
         return {

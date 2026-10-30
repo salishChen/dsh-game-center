@@ -20,6 +20,7 @@ import {
   validateFramePolicy,
   isSafeBundlePath,
   validateGameBundleFiles,
+  GAME_BUNDLE_MAX_FILE_BYTES,
   assembleGameDocument,
 } from '../src/runtime/assembler.js';
 
@@ -74,7 +75,7 @@ test('Bundle 文件清单校验：空文件、重复路径、超限文件与总�
 
   // 4. 单文件超限 (1MB)
   const hugeFile = [
-    { path: 'dist/huge.js', content: 'x'.repeat(1024 * 1024 + 10) },
+    { path: 'dist/huge.js', content: 'x'.repeat(GAME_BUNDLE_MAX_FILE_BYTES + 10) },
   ];
   assert.ok(validateGameBundleFiles(hugeFile).some((v) => v.reason.includes('超过上限')));
 });
@@ -177,5 +178,97 @@ test('安全防御拦截：检测到任何 http/https/相对路径逃逸的外�
   assert.throws(
     () => assembleGameDocument({ entryPath: 'index.html', files: missingRef, options: { runtimeInstanceId: '1', nonce: '1' } }),
     /缺少依赖脚本文件/,
+  );
+});
+
+test('安全防御拦截：ESM 源码（含顶层 export）不得内联为经典脚本', () => {
+  // 复现用户报的 "game.js:1118 Uncaught SyntaxError: Unexpected token 'export'"：
+  // 游戏把**源码版 ESM** 当成 dist 产物提交，内联后浏览器在合成文档里报难懂的语法错。
+  // 这里提前拦截并给出可操作提示。
+  const esmFiles = [
+    {
+      path: 'index.html',
+      content: '<html><head></head><body><script src="./game.js"></script></body></html>',
+    },
+    {
+      path: 'game.js',
+      content: 'export function init() {}\nconst x = 1;\n',
+    },
+  ];
+  assert.throws(
+    () => assembleGameDocument({ entryPath: 'index.html', files: esmFiles, options: { runtimeInstanceId: '1', nonce: '1' } }),
+    /含有顶层 export/,
+    'ESM 源码必须被拦截并给出明确提示',
+  );
+
+  // 多种顶层 export 形态都要拦住
+  for (const body of [
+    'export const a = 1;',
+    'export default function(){}',
+    'export function f(){}',
+    'export class C {}',
+    'export { a };',
+    'export * from "./x.js";',
+  ]) {
+    const files = [
+      { path: 'index.html', content: '<html><head></head><body><script src="./game.js"></script></body></html>' },
+      { path: 'game.js', content: body },
+    ];
+    assert.throws(
+      () => assembleGameDocument({ entryPath: 'index.html', files, options: { runtimeInstanceId: '1', nonce: '1' } }),
+      /含有顶层 export/,
+      `必须拦住: ${body}`,
+    );
+  }
+
+  // 正常 IIFE 产物不得被误伤
+  const okFiles = [
+    { path: 'index.html', content: '<html><head></head><body><script src="./game.js"></script></body></html>' },
+    { path: 'game.js', content: '(function(){ var s = "export me"; window.__X__ = s; })();' },
+  ];
+  const assembled = assembleGameDocument({
+    entryPath: 'index.html',
+    files: okFiles,
+    options: { runtimeInstanceId: '1', nonce: '1' },
+  });
+  assert.ok(assembled.includes('window.__X__'), '字符串里的 export 字样不得误判为 ESM');
+});
+
+test('JS 脚本中的小于比较符（如 < base.height）不得被误判为 HTML 危险标签', () => {
+  const jsSnippet = `
+    (function() {
+      var transparent = 0;
+      for (var y = 0; y < base.height; ++y) {
+        for (var x = 0; x < base.width; ++x) {
+          if (!pixels.data[(x + y * base.width) * 4 + 3]) { ++transparent; }
+        }
+      }
+      var bytesInCanvas = transparent * 3 + (base.width * base.height - transparent);
+      for (var multiplier = 1; bytesInCanvas * multiplier * multiplier < blob.size; ++multiplier) ;
+      if (oldY > 0) {}
+    })();
+  `;
+  const files = [
+    { path: 'index.html', content: '<!DOCTYPE html><html><head><title>Pixel Quest</title></head><body><canvas id="c"></canvas><script src="game.js"></script></body></html>' },
+    { path: 'game.js', content: jsSnippet },
+  ];
+
+  // 正常组装，绝不抛出未受支持标签异常
+  const doc = assembleGameDocument({
+    entryPath: 'index.html',
+    files,
+    options: { runtimeInstanceId: 'rt-script-test', nonce: 'nonce-123' },
+  });
+  assert.ok(doc.includes('bytesInCanvas'), '包含 < base.height 的游戏脚本必须成功内联组装');
+
+  // 但如果 HTML 结构中真有 <base> 或 <iframe>，必须坚决拦截
+  const dangerousHtml = [
+    { path: 'index.html', content: '<html><head><base href="https://evil.com"></head><body><script src="game.js"></script></body></html>' },
+    { path: 'game.js', content: 'console.log("ok");' },
+  ];
+  assert.throws(
+    () => assembleGameDocument({ entryPath: 'index.html', files: dangerousHtml, options: { runtimeInstanceId: '1', nonce: '1' } }),
+    /安全防御拦截: 严禁包含未受支持的标签: <base/i,
+    'HTML 中的真实 <base> 标签必须被拦截',
   );
 });

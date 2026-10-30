@@ -307,7 +307,7 @@ const CONTAINER_STYLE = Object.freeze({
   margin: '12px 0',
   padding: '12px',
   borderRadius: '8px',
-  background: 'var(--dsw-alias-bg-subtle, rgba(0,0,0,0.03))',
+  background: 'var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base, Canvas))',
   border: '1px solid var(--dsw-alias-border-l3, rgba(0,0,0,0.08))',
 });
 

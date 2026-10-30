@@ -1,3 +1,5 @@
+import { attachWhaleHistory } from './storage/whale-history.js';
+import { WhaleWallet, attachWhaleMeter } from './storage/whale-wallet.js';
 /**
  * Host 插件入口（DSH Cordis 插件形态）。
  *
@@ -26,7 +28,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { createHash, randomBytes } from 'node:crypto';
 import { isMinimalContext } from "./dsh-adapter/context.js";
-import { GameCenterCore, defineGameCenterService } from "./remote/game-center-service.js";
+import { GameCenterCore, defineGameCenterService, } from "./remote/game-center-service.js";
+import { resolveHostRuntimeVersions } from "./runtime/host-runtime-version.js";
 import { SaveStore, MemorySaveBackend } from "./storage/save-store.js";
 import { SqliteSaveBackend } from "./storage/sqlite-save-backend.js";
 export * from "./storage/save-store.js";
@@ -152,15 +155,34 @@ export function apply(ctx, options = {}) {
         ...(options.ttlMs === undefined ? {} : { ttlMs: options.ttlMs }),
     });
     const hostCtx = ctx;
+    const runningVersions = options.runningVersions !== undefined
+        ? options.runningVersions
+        : resolveHostRuntimeVersions(process.argv, import.meta.url);
     const service = defineGameCenterService(core, hostCtx, {
         playerId,
         saveStore,
+        wallet: new WhaleWallet(dataDir ? path.join(dataDir, 'gamecenter-wallet.sqlite') : ':memory:', playerId),
         gameLibraryDir,
         previewDir: options.previewDir,
         approvals: options.approvals,
-        catalogMode: options.catalogMode,
+        catalogMode: options.catalogMode ?? (options.catalogBaseUrl || process.env.DSH_GAMECENTER_BACKEND_URL || true ? 'remote' : 'github'),
         catalogFixtureEntries: options.catalogFixtureEntries,
+        catalogRepo: options.catalogRepo,
+        catalogGithubToken: options.catalogGithubToken,
+        catalogFetcher: options.catalogFetcher,
+        catalogBaseUrl: options.catalogBaseUrl ?? (process.env.DSH_GAMECENTER_BACKEND_URL || 'http://192.168.3.222:18080/v1'),
+        rawBaseUrl: options.rawBaseUrl ?? process.env.DSH_GAMECENTER_RAW_BASE,
+        reportDownloadFailures: options.reportDownloadFailures,
+        installId: options.installId,
+        runningVersions,
+        allowedMediaHosts: options.allowedMediaHosts,
+        mediaFetcher: options.mediaFetcher,
+        dnsLookup: options.dnsLookup,
+        mediaSecurityVerified: options.mediaSecurityVerified,
     });
+    const history = attachWhaleHistory(ctx, service.wallet);
+    service.startWalletHistory = history.start;
+    const detachMeter = attachWhaleMeter(ctx, service.wallet);
     const scanIntervalMs = options.scanIntervalMs ?? SCAN_INTERVAL_MS;
     let timer;
     let disposed = false;
@@ -182,6 +204,11 @@ export function apply(ctx, options = {}) {
                 clearInterval(timer);
                 timer = undefined;
             }
+            if (!disposed) {
+                history.dispose();
+                detachMeter();
+                service.wallet.close();
+            }
             disposed = true;
         };
     }, 'gamecenter: host service lifetime');
@@ -195,6 +222,11 @@ export function apply(ctx, options = {}) {
         remoteMounted: service !== null,
         scanIntervalMs,
         dispose: () => {
+            if (!disposed) {
+                history.dispose();
+                detachMeter();
+                service.wallet.close();
+            }
             if (timer !== undefined) {
                 clearInterval(timer);
                 timer = undefined;

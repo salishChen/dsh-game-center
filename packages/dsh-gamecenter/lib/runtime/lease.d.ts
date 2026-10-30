@@ -31,7 +31,7 @@ export type LeaseState =
 /** 已创建，尚未握手；不接受业务请求。 */
 'pending'
 /** 运行中：唯一允许受理 AI 请求与存档写入的状态。 */
- | 'running'
+ | 'running' | 'suspended'
 /** 暂停中：输入已封、请求已拒，等待快照持久化确认。 */
  | 'pausing'
 /** 已暂停：快照已确认持久化，实例可销毁。 */
@@ -76,6 +76,7 @@ export interface LeaseRecord {
     ackDeadline: string;
     /** 租约时长（毫秒），供首次调用确认进入 running 时重置 expiresAt。 */
     ttlMs: number;
+    suspendedRemainingMs?: number;
     /** 接管前的前序封存租约快照（未确认握手被回收时还原槽位状态）。 */
     priorSealedSnapshot?: PriorSealedSnapshot | undefined;
     /** pausing 阶段绑定的授权最终操作 ID。只允许该 operationId 的首写与幂等重试，拒绝额外写入。 */

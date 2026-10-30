@@ -306,12 +306,14 @@ function validateEntryShape(value: unknown): { ok: true; entry: CatalogMachineEn
   }
   const obj = value as Record<string, unknown>
 
-  const allowedKeys = ['schemaVersion', 'gameId', 'title', 'summary', 'version', 'source']
+  const requiredKeys = ['schemaVersion', 'gameId', 'title', 'summary', 'version', 'source']
+  const optionalKeys = ['display','categories']
+  const allowedKeys = [...requiredKeys, ...optionalKeys]
   const extra = Object.keys(obj).filter((key) => !allowedKeys.includes(key))
   if (extra.length > 0) {
     return reject('PROTOCOL_INVALID', `机器块含未知字段: ${extra.join(', ')}`)
   }
-  const missing = allowedKeys.filter((key) => !(key in obj))
+  const missing = requiredKeys.filter((key) => !(key in obj))
   if (missing.length > 0) {
     return reject('PROTOCOL_INVALID', `机器块缺少字段: ${missing.join(', ')}`)
   }
@@ -394,6 +396,13 @@ function validateEntryShape(value: unknown): { ok: true; entry: CatalogMachineEn
     version,
     source: { repository, ref, commit, manifestPath, manifestDigest, bundleDigest },
   }
+  if ('display' in obj && obj['display'] !== undefined) {
+    entry.display = obj['display'] as any
+  }
+  if('categories' in obj){
+    if(!validGameCategories(obj['categories']))return reject('PROTOCOL_INVALID','categories 必须为 1–3 个不重复的有效游戏分类')
+    entry.categories=[...obj['categories']]
+  }
   return { ok: true, entry }
 }
 
@@ -405,3 +414,4 @@ function isGitHubRepositoryUrl(url: string): boolean {
 function isValidCatalogGameId(value: string): boolean {
   return /^[a-z0-9](?:[a-z0-9-]{0,62})(?:\.[a-z0-9](?:[a-z0-9-]{0,62}))*$/.test(value)
 }
+import {validGameCategories} from './categories.js'

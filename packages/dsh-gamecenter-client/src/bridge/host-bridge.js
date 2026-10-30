@@ -24,9 +24,12 @@ export const BRIDGE_METHODS = Object.freeze([
   'handshake',
   'ai.generate',
   'ai.cancel',
+  'game.command',
+  'wallet.command',
   'save.checkpoint',
   'lifecycle.ready',
   'lifecycle.pauseAck',
+  'lifecycle.controlAck',
 ]);
 
 /** 与 packages/protocol 的 BRIDGE_MAX_MESSAGE_BYTES 同源（256 KiB）。 */

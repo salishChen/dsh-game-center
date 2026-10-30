@@ -5,6 +5,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import {
   sdkRangeAccepts,
@@ -21,6 +22,8 @@ import {
   protocolError,
   isErrorCode,
   ERROR_CODES,
+  DEFAULT_RETRYABLE,
+  hasSaveCapability,
   BRIDGE_METHODS,
   BRIDGE_MAX_MESSAGE_BYTES,
   DSH_VERSION_LOCK,
@@ -173,7 +176,13 @@ test('存档兼容判定给出明确原因', () => {
 })
 
 test('错误码信封与白名单', () => {
-  assert.equal(ERROR_CODES.length, 13)
+  // 15 = 13 + SAVE_UNSUPPORTED（存档改可选能力后新增，非致命）
+  //    + CATALOG_UNREACHABLE（目录后台不可达，与"未审批"区分，可重试）
+  assert.equal(ERROR_CODES.length, 15)
+  assert.equal(isErrorCode('CATALOG_UNREACHABLE'), true)
+  assert.equal(DEFAULT_RETRYABLE.CATALOG_UNREACHABLE, true, '网络类失败允许稍后重试')
+  assert.equal(isErrorCode('SAVE_UNSUPPORTED'), true)
+  assert.equal(DEFAULT_RETRYABLE.SAVE_UNSUPPORTED, false)
   assert.equal(isErrorCode('PAUSED'), true)
   assert.equal(isErrorCode('PAUSED_BUT_WHATEVER'), false)
   const err = protocolError('RATE_LIMIT', '稍后重试')
@@ -194,3 +203,32 @@ test('DSH 版本锁定同时记录基线与实装，且不做跨版本承诺', (
   assert.match(DSH_VERSION_LOCK.localVerified.buildCommit, /^[0-9a-f]{40}$/)
   assert.ok(DSH_VERSION_LOCK.notClaimed.length >= 3)
 })
+
+// 存档是可选能力：缺省 save = 无存档，Host/Client 必须据此跳过强制落盘与封存。
+test('hasSaveCapability：缺省 save 视为无存档能力', () => {
+  const noSave = { id: 'example.minesweeping', schemaVersion: 1 }
+  const withSave = {
+    id: 'example.minesweeping',
+    schemaVersion: 1,
+    save: { schemaVersion: 1, supportsResume: true, checkpointPolicy: 'each-action' },
+  }
+  assert.equal(hasSaveCapability(noSave), false)
+  assert.equal(hasSaveCapability(withSave), true)
+  // 类型守卫收窄：通过后 save 一定存在
+  if (hasSaveCapability(withSave)) assert.equal(withSave.save.supportsResume, true)
+  // schema 层：manifest.v1.json 的 required 不得再包含 save
+  const schema = JSON.parse(readFileSync(new URL('../schemas/manifest.v1.json', import.meta.url), 'utf8'))
+  assert.equal(schema.required.includes('save'), false)
+  assert.equal(schema.required.includes('permissions'), true)
+})
+
+
+test('Bridge JSON Schema mirrors the reversible lifecycle acknowledgement whitelist', async () => {
+  const fs = await import('node:fs');
+  const protocol = await import('../dist/index.js');
+  const schema = JSON.parse(fs.readFileSync(new URL('../schemas/bridge-envelope.v1.json', import.meta.url), 'utf8'));
+  assert.deepEqual(schema.properties.method.enum, [...protocol.BRIDGE_METHODS]);
+  for (const input of [{gameId:'example.game',saveId:'save-default',commit:'../../escape'}, {gameId:'example.game',saveId:'save-default',previewId:'../escape'}]) {
+    assert.ok(protocol.validateSaveLatestRequest(input).length > 0);
+  }
+});

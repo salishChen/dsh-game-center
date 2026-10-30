@@ -247,11 +247,11 @@ function fakeRemote(state = {}) {
   };
 }
 
-test('contribution 形状：十三个方法、namespace 一致、无 scope、strict codec', () => {
+test('contribution 形状：十五个方法、namespace 一致、无 scope、strict codec', () => {
   const contribution = createGameCenterContribution();
   assert.equal(contribution.package, '@dsh-gamecenter/client');
   assert.deepEqual(
-    contribution.descriptors.map((d) => d.method),
+    contribution.descriptors.map((d) => d.method).sort(),
     [
       'handshake',
       'pause',
@@ -259,14 +259,25 @@ test('contribution 形状：十三个方法、namespace 一致、无 scope、str
       'leaseStatus',
       'catalogList',
       'catalogInstall',
+      'catalogUninstall',
       'gameBundle',
       'saveLatest',
       'saveCheckpoint',
       'previewBundle',
       'abandonRuntime',
+      'mediaFetch',
       'modelCatalog',
+      'aiGenerate',
+    'setAiBinding',
+    'suspendRuntime',
+    'resumeRuntime',
+    'cancelAi',
+    'landlordAction',
+    'walletStatus',
+    'walletAction',
+    'arenaAction',
       'previewList',
-    ],
+    ].sort(),
   );
   for (const descriptor of contribution.descriptors) {
     assert.equal(descriptor.namespace, 'gameCenter');
@@ -279,7 +290,18 @@ test('contribution 形状：十三个方法、namespace 一致、无 scope、str
   const methods = contribution.descriptors.map((d) => d.method).sort();
   const expected = [
     'abandonRuntime',
+    'aiGenerate',
+    'setAiBinding',
+    'suspendRuntime',
+    'resumeRuntime',
+    'cancelAi',
+    'landlordAction',
+    'walletStatus',
+    'walletAction',
+    'arenaAction',
     'catalogInstall',
+    'catalogUninstall',
+    'mediaFetch',
     'catalogList',
     'gameBundle',
     'handshake',
@@ -292,7 +314,7 @@ test('contribution 形状：十三个方法、namespace 一致、无 scope、str
     'saveCheckpoint',
     'saveLatest',
   ].sort();
-  assert.deepEqual(methods, expected, 'descriptor 必须与协议 13 条方法表完全一致');
+  assert.deepEqual(methods, expected, 'descriptor 必须与协议 15 条方法表完全一致');
 });
 
 test('modelCatalog 无业务参数，但必须声明 cancellation（否则 Host 少传 AbortSignal）', () => {
@@ -300,7 +322,12 @@ test('modelCatalog 无业务参数，但必须声明 cancellation（否则 Host 
   assert.deepEqual(catalog.parameters, []);
   // typert validateInvocation：cancellation.parameter 必须是 "signal"
   assert.deepEqual(catalog.cancellation, { parameter: 'signal' });
-  const others = createGameCenterContribution().descriptors.filter((d) => d.method !== 'modelCatalog');
+  // aiGenerate 例外：Host 末位形参是 AbortSignal（取消/关闭中断 Broker），必须声明。
+  const ai = createGameCenterContribution().descriptors.find((d) => d.method === 'aiGenerate');
+  assert.deepEqual(ai.cancellation, { parameter: 'signal' }, 'aiGenerate 必须声明 cancellation');
+  const others = createGameCenterContribution().descriptors.filter(
+    (d) => !['modelCatalog','aiGenerate','landlordAction'].includes(d.method),
+  );
   for (const descriptor of others) {
     assert.equal('cancellation' in descriptor, false, '有 input 的方法不需要 cancellation');
   }
@@ -359,7 +386,7 @@ test('形状校验能抓出误填 scope（会走 scoped 路径）', () => {
   assert.ok(violations.some((v) => v.field === 'scope'));
 });
 
-test('端到端（MOCK）：挂载后能调用 gameCenter 十三个方法', async () => {
+test('端到端（MOCK）：挂载后能调用 gameCenter 十四个方法', async () => {
   const remote = fakeRemote();
   const ctx = { remote };
   const mounted = await mountGameCenterRemote(ctx);

@@ -1,3 +1,5 @@
+import {attachWhaleHistory} from './storage/whale-history.js'
+import {WhaleWallet,attachWhaleMeter} from './storage/whale-wallet.js'
 /**
  * Host 插件入口（DSH Cordis 插件形态）。
  *
@@ -29,7 +31,14 @@ import { createHash, randomBytes } from 'node:crypto'
 
 import type { ApprovedRelease, CatalogMachineEntry } from '@dsh-gamecenter/protocol'
 import { isMinimalContext } from './dsh-adapter/context.ts'
-import { GameCenterCore, defineGameCenterService, type GameCenterHostContext, type GameCenterService } from './remote/game-center-service.ts'
+import {
+  GameCenterCore,
+  defineGameCenterService,
+  type GameCenterHostContext,
+  type GameCenterService,
+  type HttpFetcher,
+} from './remote/game-center-service.ts'
+import { resolveHostRuntimeVersions } from './runtime/host-runtime-version.ts'
 import { SaveStore, type SaveStorageBackend, MemorySaveBackend } from './storage/save-store.ts'
 import { SqliteSaveBackend, type SqliteSaveBackendOptions } from './storage/sqlite-save-backend.ts'
 
@@ -92,6 +101,38 @@ export interface HostPluginOptions {
   scanIntervalMs?: number | undefined
   /** 时间注入函数（测试/对账使用）。 */
   nowMs?: (() => number) | undefined
+  /** 目录仓库所有者与仓库名，默认 salishChen/dsh-game-center-warehouse */
+  catalogRepo?: { owner: string; repo: string } | undefined
+  /** 访问目录仓库的 GitHub Token（可选，缺省为匿名只读） */
+  catalogGithubToken?: string | undefined
+  /** 目录 HTTP 请求拉取器（测试/对账注入用） */
+  catalogFetcher?: HttpFetcher | undefined
+  /**
+   * 远端目录/上报共用 endpoint（契约 §3 条款 14），例如 `https://games.example.com/v1`。
+   * 为空 → 远端目录与上报整体静默；设置它才能切到 `catalogMode: 'remote'`。
+   */
+  catalogBaseUrl?: string | undefined
+  /**
+   * 产物下载主机前缀（默认官方 `https://raw.githubusercontent.com`）。
+   * 官方 raw 域名在本机线路不可达时，配置成可用镜像前缀，例如
+   * `https://ghfast.top/https://raw.githubusercontent.com`（亦可用环境变量
+   * `DSH_GAMECENTER_RAW_BASE`）。镜像只搬字节：安装阶段仍在本地重算摘要。
+   */
+  rawBaseUrl?: string | undefined
+  /** 见 `game-center-service.ts` 的 `reportDownloadFailures`：迁移确认前默认关闭。 */
+  reportDownloadFailures?: boolean | undefined
+  /** 装机级 installId；缺省时读/建 `<gameLibraryDir>/.install-id`（用户不可见）。 */
+  installId?: string | undefined
+  /** 显式覆盖的运行版本对（测试/对账注入用）；未提供时从 argv[2] 与自身 package.json 解析 */
+  runningVersions?: { gameCenter: string; dsh: string } | null | undefined
+  /** 受控媒体拉取的主机白名单 */
+  allowedMediaHosts?: readonly string[] | undefined
+  /** 自定义媒体 HTTP fetcher（测试/对账注入用） */
+  mediaFetcher?: ((url: string) => Promise<{ ok: boolean; status: number; headers: { get(k: string): string | null }; arrayBuffer(): Promise<ArrayBuffer> }>) | undefined
+  /** 自定义 DNS 解析钩子（测试/对账注入用） */
+  dnsLookup?: ((hostname: string) => Promise<{ address: string; family: number }>) | undefined
+  /** 是否开启媒体拉取（默认 false 安全禁用，返回 MEDIA_UNAVAILABLE） */
+  mediaSecurityVerified?: boolean | undefined
 }
 
 export interface HostPluginApi {
@@ -209,16 +250,37 @@ export function apply(ctx: unknown, options: HostPluginOptions = {}): HostPlugin
   })
 
   const hostCtx = ctx as GameCenterHostContext
+  const runningVersions =
+    options.runningVersions !== undefined
+      ? options.runningVersions
+      : resolveHostRuntimeVersions(process.argv, import.meta.url)
+
   const service = defineGameCenterService(core, hostCtx, {
     playerId,
     saveStore,
+    wallet: new WhaleWallet(dataDir ? path.join(dataDir,'gamecenter-wallet.sqlite') : ':memory:',playerId),
     gameLibraryDir,
     previewDir: options.previewDir,
     approvals: options.approvals,
-    catalogMode: options.catalogMode,
+    catalogMode: options.catalogMode ?? (options.catalogBaseUrl || process.env.DSH_GAMECENTER_BACKEND_URL || true ? 'remote' : 'github'),
     catalogFixtureEntries: options.catalogFixtureEntries,
+    catalogRepo: options.catalogRepo,
+    catalogGithubToken: options.catalogGithubToken,
+    catalogFetcher: options.catalogFetcher,
+    catalogBaseUrl: options.catalogBaseUrl ?? (process.env.DSH_GAMECENTER_BACKEND_URL || 'http://192.168.3.222:18080/v1'),
+    rawBaseUrl: options.rawBaseUrl ?? process.env.DSH_GAMECENTER_RAW_BASE,
+    reportDownloadFailures: options.reportDownloadFailures,
+    installId: options.installId,
+    runningVersions,
+    allowedMediaHosts: options.allowedMediaHosts,
+    mediaFetcher: options.mediaFetcher,
+    dnsLookup: options.dnsLookup,
+    mediaSecurityVerified: options.mediaSecurityVerified,
   })
 
+  const history=attachWhaleHistory(ctx as {inject?:(keys:string[],callback:(ctx:any)=>void)=>{dispose:()=>unknown}},service.wallet)
+  service.startWalletHistory=history.start
+  const detachMeter=attachWhaleMeter(ctx as {on?:(event:string,listener:(...args:any[])=>any)=>any},service.wallet)
   const scanIntervalMs = options.scanIntervalMs ?? SCAN_INTERVAL_MS
   let timer: ReturnType<typeof setInterval> | undefined
   let disposed = false
@@ -241,6 +303,7 @@ export function apply(ctx: unknown, options: HostPluginOptions = {}): HostPlugin
         clearInterval(timer)
         timer = undefined
       }
+      if(!disposed){history.dispose();detachMeter();service.wallet.close()}
       disposed = true
     }
   }, 'gamecenter: host service lifetime')
@@ -255,6 +318,7 @@ export function apply(ctx: unknown, options: HostPluginOptions = {}): HostPlugin
     remoteMounted: service !== null,
     scanIntervalMs,
     dispose: () => {
+      if(!disposed){history.dispose();detachMeter();service.wallet.close()}
       if (timer !== undefined) {
         clearInterval(timer)
         timer = undefined

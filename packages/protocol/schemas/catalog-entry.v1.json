@@ -5,30 +5,93 @@
   "description": "Issue 内 gamecenter-json 代码块的唯一机器数据。描述文字只作展示，不能被解释为安装命令。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "gameId", "title", "summary", "version", "source"],
+  "required": [
+    "schemaVersion",
+    "gameId",
+    "title",
+    "summary",
+    "version",
+    "source"
+  ],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": {
+      "const": 1
+    },
     "gameId": {
       "type": "string",
       "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62})(?:\\.[a-z0-9](?:[a-z0-9-]{0,62}))*$"
     },
-    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
-    "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
-    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+([-+].*)?$" },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+([-+].*)?$"
+    },
     "source": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repository", "ref", "commit", "manifestPath", "manifestDigest", "bundleDigest"],
+      "required": [
+        "repository",
+        "ref",
+        "commit",
+        "manifestPath",
+        "manifestDigest",
+        "bundleDigest"
+      ],
       "properties": {
         "repository": {
           "type": "string",
           "pattern": "^https://(github\\.com|gitee\\.com)/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(\\.git)?$"
         },
-        "ref": { "type": "string", "minLength": 1, "maxLength": 200 },
-        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
-        "manifestPath": { "type": "string", "pattern": "^(?!.*(?:^|/)\\.\\.(?:/|$))[^/].*$" },
-        "manifestDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-        "bundleDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "manifestPath": {
+          "type": "string",
+          "pattern": "^(?!.*(?:^|/)\\.\\.(?:/|$))[^/].*$"
+        },
+        "manifestDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "bundleDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "categories": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "动作",
+          "射击",
+          "冒险",
+          "策略",
+          "益智",
+          "棋牌",
+          "休闲",
+          "竞速",
+          "角色扮演",
+          "模拟"
+        ]
       }
     }
   }

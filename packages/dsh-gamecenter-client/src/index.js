@@ -26,6 +26,8 @@
 // @ts-expect-error 运行时由 DSH 浏览器静态外部表提供（见文件头第 2 条）
 import { createElement as h, useEffect } from 'react';
 import { GameCenterOverlay } from './ui/GameCenterOverlay.js';
+import { GameCenterPage } from './ui/GameCenterPage.js';
+import { GameCenterIcon } from './ui/GameCenterIcon.js';
 import { createResourceTable } from './runtime/resources.js';
 import {
   abandonPause,
@@ -38,6 +40,8 @@ import {
 import { createNonce, createLaunchToken } from './bridge/host-bridge.js';
 import { mountGameCenterRemote, createGameCenterClient } from './bridge/remote-mount.js';
 import { runRemoteDiagnostics } from './bridge/diagnostics.js';
+import { createGameSessionController } from './runtime/session-controller.js';
+import { createThemeBridge } from './bridge/theme-bridge.js';
 
 export const LOCALE_NS = 'gamecenter';
 export const PANEL_ID = 'gamecenter';
@@ -45,7 +49,7 @@ const TITLE_ZH = '游戏中心';
 const TITLE_EN = 'Game Center';
 
 /** 本插件需要 Client 侧的 `remote` 服务（`ctx.remote.$mount` 由 dsh-api-gateway 提供）。 */
-export const inject = ['slots', 'locale', 'remote'];
+export const inject = ['slots', 'locale', 'remote', 'theme'];
 
 /**
  * DSH 客户端插件上下文（只声明本插件用到的成员，避免引入 cordis 类型包）。
@@ -53,6 +57,7 @@ export const inject = ['slots', 'locale', 'remote'];
  * @property {any} slots
  * @property {any} locale
  * @property {any} [remote]
+ * @property {any} [theme] DSH 主题服务（`ctx.provide('theme')` 注入，v3 主题通道）
  * @property {(name: string) => any} [get]
  * @property {any} [reflect]
  * @property {(fn: () => void | (() => void), label: string) => void} effect
@@ -134,8 +139,10 @@ export function apply(ctx) {
       // 还没有运行实例：没有可暂停的游戏，直接放行关闭（不得伪造保存成功）。
       return Promise.resolve({ kind: 'saved', message: '当前没有运行中的游戏。' });
     }
+    if (pending !== null) return pending;
     const request = requestPauseLease(lease, { reason });
-    if (request === null) {
+    // The dispatcher may already have frozen this generation before the waiter is registered.
+    if (request === null && !(lease.state === 'pausing' && lease.pendingPauseGeneration === lease.generation)) {
       return Promise.resolve({ kind: 'refused', message: '当前运行已处于暂停或已停止。' });
     }
     const current = lease;
@@ -180,6 +187,30 @@ export function apply(ctx) {
   };
 
   /**
+   * 游戏会话控制器（v3 导航收尾）。
+   *
+   * 插件作用域创建，**生命周期与插件一致**，不随 main 槽页面卸载而消失。
+   * 它把运行中的 iframe 放在脱离 React 树的 detached host 里，使"导航离开"时
+   * 可以先走完 `requestPause → 落盘确认 → saveAck 封存 → dispose`，再销毁容器。
+   */
+  const sessionController = createGameSessionController({ requestPause, getService,
+    destroyRuntime: (current) => {
+      if (lease === current && pauseResolve !== null) {
+        pauseResolve({kind:'crashed',message:'运行已关闭，本次保存未确认。'});
+        pauseResolve = null; pending = null;
+      }
+      destroyRuntime(current); resources.releaseAll();
+      if (lease === current) lease = null;
+    },
+  });
+
+  /**
+   * 主题桥（v3）：把 DSH 主题经已配对 MessagePort 下发给游戏。
+   * 取不到主题服务时不猜、不报错，游戏沿用自身默认。
+   */
+  const themeBridge = createThemeBridge(ctx);
+
+  /**
    * 创建一个新的运行实例登记（阶段1 由 Bridge 握手真正驱动）。
    *
    * `runtimeInstanceId` 可选：由弹层在握手时生成并传给 Host，这里复用同一个值，
@@ -202,15 +233,33 @@ export function apply(ctx) {
    * @returns {void}
    */
   const onSaveAck = (ack) => {
-    if (lease === null || lease.state !== 'pausing') return;
-    settle(completePause(lease, ack));
+    if (lease === null || lease.generation !== ack.generation) return;
+    // Dispatcher validates the acknowledgement before calling the production Host handler.
+    if (lease.state === 'paused' && lease.lastRevision === ack.revision && pending !== null) {
+      settle({kind:'saved', message:`已保存到检查点 r${ack.revision}，游戏已停止。`});
+    } else if (lease.state === 'pausing') {
+      settle(completePause(lease, ack));
+    }
   };
 
   ctx.effect(() => {
     try {
       return ctx.locale.register(LOCALE_NS, {
-        zh: { title: TITLE_ZH, close: '关闭游戏中心', pausing: '正在保存并暂停…' },
-        en: { title: TITLE_EN, close: 'Close Game Center', pausing: 'Saving and pausing…' },
+        zh: {
+          title: TITLE_ZH,
+          close: '关闭游戏中心',
+          pausing: '正在保存并暂停…',
+          // 2026-10-20 改版：游戏库改为页面，右上角诊断按钮文案
+          diagnostics: '链路诊断',
+          gameLibrary: '游戏库',
+        },
+        en: {
+          title: TITLE_EN,
+          close: 'Close Game Center',
+          pausing: 'Saving and pausing…',
+          diagnostics: 'Connection Diagnostics',
+          gameLibrary: 'Game Library',
+        },
       });
     } catch {
       // locale 缺失时回落到中文常量，不影响功能。
@@ -271,18 +320,32 @@ export function apply(ctx) {
         label: () => t('title'),
         locale: LOCALE_NS,
       },
-      () => h('span', { 'aria-hidden': 'true' }, '🎮'),
+      // 用户指定的手柄图标（内联 SVG，currentColor 跟随 DSH 深浅色）。
+      // 侧栏按钮自身带文字标签，故这里对辅助技术隐藏，避免重复朗读。
+      () => h(GameCenterIcon, { size: 20 }),
     ));
 
-    // Selecting a sidebar panel mounts its keyed main entry. Open the overlay
-    // there, and leave a button so it can be reopened without changing panels.
+    // Selecting a sidebar panel mounts its keyed main entry.
+    //
+    // 【2026-10-20 用户改版】游戏库不再是弹框，而是主内容区的**真正页面**：
+    // 页面右上角有「链路诊断」按钮，点击后才打开 shell.overlay 上的诊断弹窗。
+    // 因此这里直接把 GameCenterPage 注册进 main 槽，不再用"按钮打开弹层"占位。
     const disposeMain = ctx.slots.inject('main', () => ctx.slots.register(
       { name: 'main', key: PANEL_ID, locale: LOCALE_NS },
       function GameCenterPanel() {
-        useEffect(() => overlay.set(true), []);
-        return h('div', { style: { padding: '24px' } },
-          h('button', { type: 'button', onClick: () => overlay.set(true) }, t('title')),
-        );
+        return h(GameCenterPage, {
+          t,
+          requestPause,
+          sessionController,
+          themeBridge,
+          beginRuntime,
+          onSaveAck,
+          remoteState,
+          getService,
+          makeNonce: createNonce,
+          makeLaunchToken: createLaunchToken,
+          runDiagnostics: runRemoteDiagnostics,
+        });
       },
     ));
 
@@ -296,6 +359,10 @@ export function apply(ctx) {
           overlay,
           t,
           requestPause,
+          // v3：会话控制器与主题桥必须在弹层形态也可用——
+          // 否则 overlay 形态下的"导航保存"与"主题下发"会静默失效。
+          sessionController,
+          themeBridge,
           beginRuntime,
           onSaveAck,
           onClosed: () => overlay.set(false),
@@ -317,6 +384,8 @@ export function apply(ctx) {
       if (lease !== null) destroyRuntime(lease);
       lease = null;
       resources.releaseAll();
+      themeBridge.dispose();
+      sessionController.dispose();
     };
   }, 'gamecenter: sidebar entry + shell.overlay');
 

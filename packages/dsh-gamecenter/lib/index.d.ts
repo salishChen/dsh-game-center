@@ -1,28 +1,5 @@
-/**
- * Host 插件入口（DSH Cordis 插件形态）。
- *
- * ## 实装装载形态（只读核实 0.2.1-rc.2 / 332895e0…）
- *
- * 参考同版本内置 Host 插件 `@deepseek-ai/dsh-api-remotes` 与
- * `@deepseek-ai/dsh-host-plugin-inventory`：
- * - `package.json` 的 `main`/`exports["."]` 指向 `lib/index.js`，`type: "module"`；
- * - 模块导出 `apply(ctx)` 与 `inject`（`export { apply, inject }`）；
- * - Host 插件不需要 `dsh.client` 字段（那是 Client bundle 的声明）。
- *
- * ## 本插件注入什么
- *
- * 只注入 `llm`（可选读取模型目录）。**不注入** `typertGateway`：
- * 按 `collectSrcClaims()` 的实现，Gateway 会主动扫描 `ctx.reflect.props` 里的
- * service 并读 `typertRemote.namespace`，因此本服务不需要反向依赖 Gateway，
- * 也不会因为 Gateway 未激活而阻塞装载。
- *
- * ## 不做的事
- *
- * - 不改 DSH 安装目录、不写玩家 profile、不启动替代服务器。
- * - 不在装载时发起任何模型调用（含 `stream()`）；`modelCatalog` 只在被调用时读目录。
- */
 import type { ApprovedRelease, CatalogMachineEntry } from '@dsh-gamecenter/protocol';
-import { GameCenterCore, type GameCenterService } from './remote/game-center-service.ts';
+import { GameCenterCore, type GameCenterService, type HttpFetcher } from './remote/game-center-service.ts';
 import { SaveStore, type SaveStorageBackend } from './storage/save-store.ts';
 export * from './storage/save-store.ts';
 export * from './storage/sqlite-save-backend.ts';
@@ -79,6 +56,54 @@ export interface HostPluginOptions {
     scanIntervalMs?: number | undefined;
     /** 时间注入函数（测试/对账使用）。 */
     nowMs?: (() => number) | undefined;
+    /** 目录仓库所有者与仓库名，默认 salishChen/dsh-game-center-warehouse */
+    catalogRepo?: {
+        owner: string;
+        repo: string;
+    } | undefined;
+    /** 访问目录仓库的 GitHub Token（可选，缺省为匿名只读） */
+    catalogGithubToken?: string | undefined;
+    /** 目录 HTTP 请求拉取器（测试/对账注入用） */
+    catalogFetcher?: HttpFetcher | undefined;
+    /**
+     * 远端目录/上报共用 endpoint（契约 §3 条款 14），例如 `https://games.example.com/v1`。
+     * 为空 → 远端目录与上报整体静默；设置它才能切到 `catalogMode: 'remote'`。
+     */
+    catalogBaseUrl?: string | undefined;
+    /**
+     * 产物下载主机前缀（默认官方 `https://raw.githubusercontent.com`）。
+     * 官方 raw 域名在本机线路不可达时，配置成可用镜像前缀，例如
+     * `https://ghfast.top/https://raw.githubusercontent.com`（亦可用环境变量
+     * `DSH_GAMECENTER_RAW_BASE`）。镜像只搬字节：安装阶段仍在本地重算摘要。
+     */
+    rawBaseUrl?: string | undefined;
+    /** 见 `game-center-service.ts` 的 `reportDownloadFailures`：迁移确认前默认关闭。 */
+    reportDownloadFailures?: boolean | undefined;
+    /** 装机级 installId；缺省时读/建 `<gameLibraryDir>/.install-id`（用户不可见）。 */
+    installId?: string | undefined;
+    /** 显式覆盖的运行版本对（测试/对账注入用）；未提供时从 argv[2] 与自身 package.json 解析 */
+    runningVersions?: {
+        gameCenter: string;
+        dsh: string;
+    } | null | undefined;
+    /** 受控媒体拉取的主机白名单 */
+    allowedMediaHosts?: readonly string[] | undefined;
+    /** 自定义媒体 HTTP fetcher（测试/对账注入用） */
+    mediaFetcher?: ((url: string) => Promise<{
+        ok: boolean;
+        status: number;
+        headers: {
+            get(k: string): string | null;
+        };
+        arrayBuffer(): Promise<ArrayBuffer>;
+    }>) | undefined;
+    /** 自定义 DNS 解析钩子（测试/对账注入用） */
+    dnsLookup?: ((hostname: string) => Promise<{
+        address: string;
+        family: number;
+    }>) | undefined;
+    /** 是否开启媒体拉取（默认 false 安全禁用，返回 MEDIA_UNAVAILABLE） */
+    mediaSecurityVerified?: boolean | undefined;
 }
 export interface HostPluginApi {
     readonly core: GameCenterCore;

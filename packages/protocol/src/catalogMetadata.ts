@@ -85,6 +85,18 @@ export interface CatalogCompatibility {
 /** 展示元数据 / Display metadata（不参与五元组审批）。 */
 export interface CatalogDisplayMetadata {
   schemaVersion: typeof CATALOG_METADATA_SCHEMA_VERSION
+  /**
+   * 游戏自身的 Git 仓库地址（**用户必填**）。
+   *
+   * 与机器块 `source.repository` **同源**，不得另造 `gameUrl` 平行字段：
+   * - 规范化后两者必须**逐字相同**，不一致即拒绝整条元数据（fail closed）；
+   * - 首版只接受 GitHub 仓库：`https://github.com/<owner>/<repo>`，可容忍 `.git` 后缀；
+   * - 拒绝凭据（userinfo）、query、fragment、非仓库路径（`/tree/…`、`/issues/…`）。
+   *
+   * English: the game's own Git repository URL, required and identical to
+   * `source.repository` after normalization. GitHub HTTPS repository URLs only.
+   */
+  repository: string
   /** 简短介绍（纯文本，用于列表卡片）。Plain-text one-liner for the list card. */
   summary: string
   /** Markdown 简介；渲染端必须使用白名单渲染器（禁 raw HTML / 禁外部图片语法）。 */
@@ -125,6 +137,30 @@ export const DIGEST_HEX_PATTERN = /^sha256:[0-9a-f]{64}$/
  */
 const SEMVER_RANGE_PATTERN =
   /^(?:\^|~)?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$|^>=\s*\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\s+<\s*\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/
+
+/**
+ * 游戏仓库地址规范化 / Normalize a game repository URL.
+ *
+ * 只接受 `https://github.com/<owner>/<repo>[.git]`：
+ * - `<owner>` 与 `<repo>` 各 1~100 个 `[A-Za-z0-9._-]`，不允许 `.`/`..`；
+ * - 不允许 userinfo、端口、query、fragment、末尾多余路径；
+ * - 统一输出为 **不带 `.git`** 的小写主机 + 原样大小写的 owner/repo，
+ *   便于与 `source.repository` 做“规范化后逐字相同”的比较。
+ *
+ * 返回 `null` 表示不合法（调用方必须 fail closed）。
+ */
+export function normalizeGameRepositoryUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 300) return null
+  const match = /^https:\/\/github\.com\/([A-Za-z0-9._-]{1,100})\/([A-Za-z0-9._-]{1,100}?)(?:\.git)?\/?$/i.exec(
+    value.trim(),
+  )
+  if (match === null) return null
+  const owner = match[1] ?? ''
+  const repo = match[2] ?? ''
+  if (owner === '.' || owner === '..' || repo === '.' || repo === '..') return null
+  if (owner.length === 0 || repo.length === 0) return null
+  return `https://github.com/${owner}/${repo}`
+}
 
 /**
  * Markdown 危险构造检测 / Markdown hazard scan.
@@ -179,13 +215,59 @@ export function isAllowedMediaUrl(url: unknown, allowedHosts: readonly string[])
 }
 
 /**
+ * 受信目录后台 origin 上的媒体地址校验 / Media URL on a trusted catalog origin.
+ *
+ * 【为什么需要】
+ * 后台（`backend/api.ts`）下发的封面是**同源绝对或相对路径**（`/v1/covers/<gameId>`），
+ * 而 `isAllowedMediaUrl` 只认 https + 白名单主机，这种地址必然被拒；又因为
+ * `validateDisplayMetadata` 整体 fail-closed，一个媒体字段失败会让调用方丢掉**整块**
+ * display（含 summary/descriptionMarkdown）——封面消失只是表象。
+ *
+ * 【安全边界：按配置授予的信任，不是放开任意 http】
+ * 这里唯一接受的例外是**运维在 Host 配置里显式给出的后台 origin**，它不是网络输入：
+ * - `trustedOrigins` 为空/未传 → 视为没有任何受信来源，直接 `false`；
+ * - scheme 只接受 `http`/`https`；authority 非空，不得含 userinfo（`@`）、
+ *   IPv6 方括号（`[` `]`）；
+ * - host 只允许 `[a-z0-9.-]`，可选 `:port` 只接受 1~5 位数字；
+ * - path 不得含 `..` 或 `\`（不做任何路径穿越）；
+ * - 最终必须与某个受信 origin **逐字相等**（各自 `trim`、去尾斜杠、小写后比较），
+ *   不做域名后缀或子域匹配。
+ * **不放宽 `isAllowedMediaUrl` 本身**：公网图片仍然只允许 https + 白名单主机 + 无自定义端口。
+ */
+export function isTrustedMediaOriginUrl(url: unknown, trustedOrigins: readonly string[] | undefined): boolean {
+  if (!Array.isArray(trustedOrigins) || trustedOrigins.length === 0) return false
+  if (typeof url !== 'string' || url.length === 0 || url.length > 2048) return false
+  const match = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)([^?#]*)(\?[^#]*)?$/.exec(url)
+  if (match === null) return false
+  const scheme = match[1] ?? ''
+  if (scheme !== 'http' && scheme !== 'https') return false
+  const authority = match[2] ?? ''
+  if (authority.length === 0) return false
+  if (authority.includes('@') || authority.includes('[') || authority.includes(']')) return false
+  // host 只允许 [a-z0-9.-]；端口只允许 1~5 位数字。
+  if (/^([a-z0-9.-]+)(?::(\d{1,5}))?$/.exec(authority) === null) return false
+  const pathPart = match[3] ?? ''
+  if (pathPart.includes('..') || pathPart.includes('\\')) return false
+  const origin = `${scheme}://${authority}`.toLowerCase()
+  return trustedOrigins.some((trusted) => trusted.trim().replace(/\/+$/, '').toLowerCase() === origin)
+}
+
+/**
  * 校验展示元数据 / Validate display metadata.
  *
  * 返回空数组表示通过。**任何未知字段、缺省必填字段、超限均拒绝**（fail closed）。
  */
 export function validateDisplayMetadata(
   input: unknown,
-  options: { allowedImageHosts: readonly string[] },
+  options: {
+    allowedImageHosts: readonly string[]
+    sourceRepository?: string | undefined
+    /**
+     * 受信目录后台的 origin 列表（如 `http://192.168.3.222:18080`）。
+     * 仅当调用方确认该后台地址由运维配置时传入；缺省即不放行任何 http/相对来源。
+     */
+    trustedMediaOrigins?: readonly string[] | undefined
+  },
 ): CatalogMetadataViolation[] {
   const out: CatalogMetadataViolation[] = []
   const push = (field: string, reason: string, reasonEn: string): void => {
@@ -198,6 +280,24 @@ export function validateDisplayMetadata(
 
   if (meta['schemaVersion'] !== CATALOG_METADATA_SCHEMA_VERSION) {
     push('schemaVersion', `schemaVersion 必须是 ${CATALOG_METADATA_SCHEMA_VERSION}`, 'unsupported schemaVersion')
+  }
+  // 游戏仓库地址：必填、规范化、且必须与 source.repository 一致（同源，不造平行字段）。
+  const repository = normalizeGameRepositoryUrl(meta['repository'])
+  if (repository === null) {
+    push(
+      'repository',
+      'repository 必须是 https://github.com/<owner>/<repo>（可带 .git），不得含凭据/query/fragment/子路径',
+      'repository must be an https://github.com/<owner>/<repo> URL without credentials, query, fragment or sub-path',
+    )
+  } else if (options.sourceRepository !== undefined) {
+    const source = normalizeGameRepositoryUrl(options.sourceRepository)
+    if (source === null || source !== repository) {
+      push(
+        'repository',
+        'display.repository 与机器块 source.repository 规范化后不一致',
+        'display.repository does not match source.repository after normalization',
+      )
+    }
   }
   if (typeof meta['summary'] !== 'string' || meta['summary'].trim().length === 0 || meta['summary'].length > 200) {
     push('summary', 'summary 必须是 1~200 字符的纯文本', 'summary must be 1..200 plain text characters')
@@ -257,7 +357,7 @@ export function validateDisplayMetadata(
 function validateMedia(
   item: unknown,
   field: string,
-  options: { allowedImageHosts: readonly string[] },
+  options: { allowedImageHosts: readonly string[]; trustedMediaOrigins?: readonly string[] | undefined },
   push: (field: string, reason: string, reasonEn: string) => void,
 ): void {
   if (typeof item !== 'object' || item === null) {
@@ -265,10 +365,15 @@ function validateMedia(
     return
   }
   const media = item as Record<string, unknown>
-  if (!isAllowedMediaUrl(media['url'], options.allowedImageHosts)) {
+  // 两条通路互不替代：公网图片仍走 `isAllowedMediaUrl`（https + 精确白名单）；
+  // `isTrustedMediaOriginUrl` 只放行运维配置的那个后台 origin。
+  if (
+    !isAllowedMediaUrl(media['url'], options.allowedImageHosts) &&
+    !isTrustedMediaOriginUrl(media['url'], options.trustedMediaOrigins)
+  ) {
     push(
       `${field}.url`,
-      '图片必须是不含 userinfo / 非默认端口 / 白名单主机上的 https URL',
+      '图片必须是不含 userinfo / 非默认端口 / 白名单主机上的 https URL，或来自受信目录后台的同源地址',
       'media url must be https on an allowlisted host, without userinfo or custom port',
     )
   }

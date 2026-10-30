@@ -76,9 +76,17 @@ export function remoteFailureOf(result: any): {
  * 五个方法的 Client 侧包装：把 Host 的失败形状统一成抛异常，或返回原始结果。
  *
  * @param {any} remoteService `ctx.remote.gameCenter`（挂载成功后才有）
- * @returns {{handshake: Function, pause: Function, saveAck: Function, leaseStatus: Function, modelCatalog: Function, catalogList: Function, catalogInstall: Function, gameBundle: Function, saveLatest: Function, saveCheckpoint: Function, previewList: Function, previewBundle: Function, abandonRuntime: Function}}
+ * @returns {{arenaAction: Function, walletStatus: Function, walletAction: Function, landlordAction: Function, setAiBinding: Function, suspendRuntime: Function, resumeRuntime: Function, cancelAi: Function, handshake: Function, pause: Function, saveAck: Function, leaseStatus: Function, modelCatalog: Function, catalogList: Function, catalogInstall: Function, gameBundle: Function, saveLatest: Function, saveCheckpoint: Function, previewList: Function, previewBundle: Function, abandonRuntime: Function, mediaFetch: Function, aiGenerate: Function}}
  */
 export function createGameCenterClient(remoteService: any): {
+    arenaAction: Function;
+    walletStatus: Function;
+    walletAction: Function;
+    landlordAction: Function;
+    setAiBinding: Function;
+    suspendRuntime: Function;
+    resumeRuntime: Function;
+    cancelAi: Function;
     handshake: Function;
     pause: Function;
     saveAck: Function;
@@ -86,12 +94,15 @@ export function createGameCenterClient(remoteService: any): {
     modelCatalog: Function;
     catalogList: Function;
     catalogInstall: Function;
+    catalogUninstall: Function;
     gameBundle: Function;
     saveLatest: Function;
     saveCheckpoint: Function;
     previewList: Function;
     previewBundle: Function;
     abandonRuntime: Function;
+    mediaFetch: Function;
+    aiGenerate: Function;
 };
 /**
  * Client 侧 `gameCenter` Remote 挂载（方案 (b)）。

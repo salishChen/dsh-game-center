@@ -15,9 +15,11 @@ import {
   SCREENSHOT_MAX_COUNT,
   findMarkdownHazards,
   isAllowedMediaUrl,
+  isTrustedMediaOriginUrl,
   validateDisplayMetadata,
   evaluateCompatibility,
   describeMetadataDigestInput,
+  normalizeGameRepositoryUrl,
 } from '../dist/catalogMetadata.js'
 import { sdkRangeAccepts } from '../dist/version.js'
 
@@ -35,6 +37,7 @@ const media = () => ({
 
 const validMeta = () => ({
   schemaVersion: 1,
+  repository: 'https://github.com/salishChen/dsh-game-minesweeping',
   summary: '确定性扫雷，AI 只生成对局 / Deterministic Minesweeper',
   descriptionMarkdown: '## 扫雷\n- 无猜生成\n\n**Deterministic** board generation.',
   cover: media(),
@@ -134,4 +137,107 @@ test('M-10 元数据审批未启用：不宣称编辑即失效，也不宣称元
   const info = describeMetadataDigestInput()
   assert.equal(info.enabled, false)
   assert.match(info.algorithm, /sha256/)
+})
+
+test('M-11 游戏仓库地址：只接受 GitHub 仓库 URL，规范化后与 source.repository 比对', () => {
+  // 合法与规范化 / valid and normalized
+  assert.equal(
+    normalizeGameRepositoryUrl('https://github.com/salishChen/dsh-game-minesweeping.git'),
+    'https://github.com/salishChen/dsh-game-minesweeping',
+  )
+  assert.equal(
+    normalizeGameRepositoryUrl('https://github.com/salishChen/dsh-game-minesweeping/'),
+    'https://github.com/salishChen/dsh-game-minesweeping',
+  )
+  // 非法：非 GitHub、凭据、query、fragment、子路径、非仓库站
+  for (const bad of [
+    'https://gitlab.com/a/b',
+    'https://u:p@github.com/a/b',
+    'https://github.com/a/b?token=1',
+    'https://github.com/a/b#readme',
+    'https://github.com/a/b/tree/main',
+    'https://github.com/a/b/issues',
+    'http://github.com/a/b',
+    'https://github.com/a',
+    'not-a-url',
+  ]) {
+    assert.equal(normalizeGameRepositoryUrl(bad), null, `应当拒绝：${bad}`)
+  }
+})
+
+test('M-12 repository 必填且必须与 source.repository 一致（不一致拒绝）', () => {
+  const meta = validMeta()
+  const consistent = validateDisplayMetadata(meta, {
+    allowedImageHosts: HOSTS,
+    sourceRepository: 'https://github.com/salishChen/dsh-game-minesweeping.git',
+  })
+  assert.deepEqual(consistent, [])
+
+  const mismatch = validateDisplayMetadata(meta, {
+    allowedImageHosts: HOSTS,
+    sourceRepository: 'https://github.com/salishChen/dsh-game-warehouse',
+  })
+  assert.ok(mismatch.some((v) => v.field === 'repository'), '仓库地址与 source.repository 不一致必须拒绝')
+
+  const missing = validMeta()
+  delete missing.repository
+  assert.ok(
+    validateDisplayMetadata(missing, { allowedImageHosts: HOSTS }).some((v) => v.field === 'repository'),
+    'repository 必填',
+  )
+})
+
+/**
+ * 证据分栏：UNIT。受信目录后台 origin（运维在 Host 配置里给出的后台地址）。
+ * 这是**按配置授予的信任**，不是放开任意 http —— 下面的反例逐条钉住边界。
+ */
+const TRUSTED_ORIGIN = 'http://192.168.3.222:18080'
+
+test('M-13 受信后台 origin：只认精确 origin，不放宽公网 http', () => {
+  assert.equal(
+    isTrustedMediaOriginUrl(`${TRUSTED_ORIGIN}/v1/covers/x`, [TRUSTED_ORIGIN]),
+    true,
+    '同源 http 后台地址应放行',
+  )
+  assert.equal(
+    isTrustedMediaOriginUrl('http://192.168.3.222:18081/v1/covers/x', [TRUSTED_ORIGIN]),
+    false,
+    '同 host 不同端口不是同一个 origin',
+  )
+  assert.equal(isTrustedMediaOriginUrl('https://evil.com/v1/covers/x', [TRUSTED_ORIGIN]), false, '未受信主机必须拒绝')
+  assert.equal(
+    isTrustedMediaOriginUrl('http://user@192.168.3.222:18080/v1/covers/x', [TRUSTED_ORIGIN]),
+    false,
+    'authority 含 @（userinfo）必须拒绝',
+  )
+  assert.equal(
+    isTrustedMediaOriginUrl(`${TRUSTED_ORIGIN}/v1/../../etc/passwd`, [TRUSTED_ORIGIN]),
+    false,
+    'path 含 .. 必须拒绝',
+  )
+  assert.equal(isTrustedMediaOriginUrl(`${TRUSTED_ORIGIN}/v1/covers/x`, []), false, 'trustedOrigins 为空即没有任何受信来源')
+  assert.equal(isTrustedMediaOriginUrl(`${TRUSTED_ORIGIN}/v1/covers/x`, undefined), false)
+  // 写法容错：受信 origin 的尾斜杠与大小写不影响比较；子域不算同源。
+  assert.equal(isTrustedMediaOriginUrl(`${TRUSTED_ORIGIN}/v1/covers/x`, [`  ${TRUSTED_ORIGIN}/  `]), true)
+  assert.equal(isTrustedMediaOriginUrl('http://sub.192.168.3.222:18080/v1/covers/x', [TRUSTED_ORIGIN]), false)
+})
+
+test('M-14 受信 origin 放行后台封面；缺省时同一输入仍然 fail closed', () => {
+  const backendMedia = () => ({ ...media(), url: `${TRUSTED_ORIGIN}/v1/covers/example.sample` })
+
+  const trusted = validMeta()
+  trusted.cover = backendMedia()
+  trusted.screenshots = [backendMedia()]
+  assert.deepEqual(
+    validateDisplayMetadata(trusted, { allowedImageHosts: HOSTS, trustedMediaOrigins: [TRUSTED_ORIGIN] }),
+    [],
+    '声明受信 origin 后，后台同源封面应通过',
+  )
+
+  const untrusted = validMeta()
+  untrusted.cover = backendMedia()
+  assert.ok(
+    validateDisplayMetadata(untrusted, { allowedImageHosts: HOSTS }).some((v) => v.field === 'cover.url'),
+    '未声明受信 origin 时，http/自定义端口的后台地址必须仍然违规（默认 fail closed）',
+  )
 })

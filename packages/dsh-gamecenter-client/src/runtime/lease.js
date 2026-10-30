@@ -15,7 +15,7 @@
 export const PAUSE_TIMEOUT_MS = 3000;
 
 /**
- * @typedef {'idle' | 'starting' | 'running' | 'pausing' | 'paused'
+ * @typedef {'idle' | 'starting' | 'running' | 'suspended' | 'pausing' | 'paused'
  *   | 'recovery-available' | 'finished' | 'destroyed'} RuntimeState
  */
 

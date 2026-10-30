@@ -603,12 +603,20 @@ export interface FetchCommitArtifactsOptions {
   timeoutMs?: number | undefined
   maxSingleFileBytes?: number | undefined
   maxTotalBytes?: number | undefined
+  /**
+   * 产物主机前缀，默认 `https://raw.githubusercontent.com`。
+   * 用于换成可用镜像（例如 `https://ghfast.top/https://raw.githubusercontent.com`）；
+   * 镜像不被信任，安装阶段仍会本地重算 manifestDigest / bundleDigest。
+   */
+  rawBase?: string | undefined
 }
 
 export interface FetchCommitArtifactsResult {
   ok: boolean
   errorCode?: string
   message?: string
+  /** §11.8/§11.9 的结构化失败诊断（只在传输类失败时存在），供上报 `download-fail` 使用。 */
+  detail?: unknown
   bundledSource?: {
     manifestContent: string
     files: readonly InstallSourceFile[]
@@ -623,6 +631,65 @@ const ALLOWED_ARTIFACT_PATHS = [
 ] as const
 
 /**
+ * 单个产物的下载**总时限**（毫秒），可被 `options.timeoutMs` 覆盖。
+ *
+ * 只作兜底：真正的"卡住"由直连通道的空闲超时判定（见 `direct-http.ts`）。
+ * 15 秒的旧默认值对 14 MB 的包等于要求 0.94 MB/s 起步，慢链路必然失败。
+ */
+export const ARTIFACT_TOTAL_TIMEOUT_MS = 300_000
+
+/** 官方产物主机；配置了 `rawBase` / `DSH_GAMECENTER_RAW_BASE` 时可换成可用镜像前缀。 */
+export const DEFAULT_RAW_BASE = 'https://raw.githubusercontent.com'
+
+/**
+ * 官方主机失败时给一句可执行的提示。
+ *
+ * 现场证据（2026-10-29）：`raw.githubusercontent.com` 在某些线路上 20 秒拿不到响应头，
+ * 这不是"超时太短"，调大超时也不会好，只能换主机。已在用镜像时不再重复提示。
+ */
+function rawBaseHint(rawBase: string): string {
+  if (rawBase !== DEFAULT_RAW_BASE) return ''
+  return '（若官方 raw 域名在本机线路不可达，可设置 DSH_GAMECENTER_RAW_BASE 走可用镜像）'
+}
+
+/**
+ * 归一化产物主机前缀（`rawBase`）。
+ *
+ * 背景（2026-10-29 实测）：`raw.githubusercontent.com` 在部分线路上**完全连不通**
+ * （20 秒拿不到响应头，换超时无用），而镜像前缀
+ * `https://ghfast.top/https://raw.githubusercontent.com` 13.7 秒下完 14 MB 且逐字节一致。
+ * 因此把主机做成配置项，默认仍走官方域名。
+ *
+ * 只接受 http/https、必须有主机名、不得携带用户名密码 —— 这个值来自本机配置，
+ * 但一旦被写坏就会变成任意 URL 拼装，所以仍然白名单式校验。
+ * 镜像**不被信任**：它只负责搬字节，`prepareInstall` 会在本地重算两个摘要，
+ * 内容被改一个字节就装不进去。
+ */
+export function normalizeRawBase(value: string | undefined): { ok: true; base: string } | { ok: false; message: string } {
+  const raw = (value ?? '').trim()
+  if (raw === '') return { ok: true, base: DEFAULT_RAW_BASE }
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    return { ok: false, message: `产物主机前缀不是合法 URL: ${raw}` }
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return { ok: false, message: `产物主机前缀只允许 http/https: ${raw}` }
+  }
+  if (parsed.hostname === '') {
+    return { ok: false, message: `产物主机前缀缺少主机名: ${raw}` }
+  }
+  if (parsed.username !== '' || parsed.password !== '') {
+    return { ok: false, message: '产物主机前缀不允许携带用户名或密码' }
+  }
+  // 前缀镜像形如 `https://ghfast.top/https://raw.githubusercontent.com`，
+  // 其 pathname 本身含有目标 URL，因此这里只去掉尾部斜杠、按字符串拼接，
+  // 不用 `url.join()`（那会把 pathname 里的 `https:` 当成路径段处理）。
+  return { ok: true, base: raw.replace(/\/+$/, '') }
+}
+
+/**
  * 限定源提交产物下载器 (Source Adapter)：
  *
  * 规则：
@@ -631,9 +698,27 @@ const ALLOWED_ARTIFACT_PATHS = [
  * 3. 严格受限文件白名单：仅允许 gamecenter.json 与 dist/ 下已知静态文件；严禁跨目录/绝对路径/.. 逃逸；
  * 4. 流式边读边查单文件上限（GAME_BUNDLE_MAX_FILE_BYTES，30 MiB）与总量上限
  *    （GAME_BUNDLE_MAX_TOTAL_BYTES，50 MiB），超限主动中断 reader 连接；
- * 5. 全程超时控制，默认 15 秒；
+ * 5. 超时分两层：单文件总时限默认 5 分钟（`ARTIFACT_TOTAL_TIMEOUT_MS`，慢链路兜底），
+ *    链路空闲由 `direct-http.ts` 的 socket 空闲超时（15s 无数据）判定并回退代理通道；
  * 6. 只拉取静态文本/二进制，不执行任何脚本，产物交由 prepareInstall 进行权威摘要比对。
  */
+/**
+ * 从传输类异常里取出 §11.8 结构化诊断（`attempts`/`phase`/`code`）。
+ * 没有 `attempts` 说明不是传输层给的错误（例如协议校验失败），返回 undefined —— 不编造。
+ */
+function transportDetailFrom(err: unknown): unknown {
+  if (typeof err !== 'object' || err === null) return undefined
+  const source = err as { attempts?: unknown; phase?: unknown; code?: unknown }
+  if (!Array.isArray(source.attempts) || source.attempts.length === 0) return undefined
+  const first = source.attempts[0] as { phase?: unknown } | undefined
+  const phase = typeof first?.phase === 'string' ? first.phase : source.phase
+  return {
+    ...(typeof phase === 'string' ? { phase } : {}),
+    ...(typeof source.code === 'string' ? { code: source.code } : {}),
+    attempts: source.attempts,
+  }
+}
+
 export async function fetchCommitArtifacts(
   options: FetchCommitArtifactsOptions,
 ): Promise<FetchCommitArtifactsResult> {
@@ -662,9 +747,22 @@ export async function fetchCommitArtifacts(
   const owner = match[1]!
   const repo = match[2]!
 
+  const rawBaseResult = normalizeRawBase(options.rawBase ?? process.env.DSH_GAMECENTER_RAW_BASE)
+  if (!rawBaseResult.ok) {
+    return { ok: false, errorCode: 'PROTOCOL_INVALID', message: rawBaseResult.message }
+  }
+  const rawBase = rawBaseResult.base
+
   const fetcher: HttpFetcher =
     options.fetcher ?? ((url: string, init?: RequestInit) => fetch(url, init))
-  const timeoutMs = options.timeoutMs ?? 15_000
+  // 【超时语义 · 2026-10-29】默认值曾是 15_000，被真实事故打脸：
+  // 大体积游戏包的 `dist/game.js` 曾达 14.16 MB，15 秒等于要求链路稳定跑满 ≥0.94 MB/s，
+  // 跨公网到 raw.githubusercontent.com 必然踩线，用户看到的就是
+  // `拉取文件超时 (15000ms): dist/game.js`。
+  // 现在这里只是**单文件总时限兜底**（5 分钟），真正判定"卡住"的是直连通道的
+  // **空闲超时**（`direct-http.ts` 的 DEFAULT_TIMEOUT_MS=15s，socket 上没数据才触发），
+  // 所以"慢但一直在收"的下载不会被误杀。
+  const timeoutMs = options.timeoutMs ?? ARTIFACT_TOTAL_TIMEOUT_MS
   // 【体积上限唯一真源 · 2026-10-27】不再各自写字面量：下载/安装两处曾分叉成 32 MiB / 30 MiB，
   // 同一个包在不同层得到不同上限和不同报错文案，排查时对不上账。现在一律引用 protocol 常量。
   const maxSingle = options.maxSingleFileBytes ?? GAME_BUNDLE_MAX_FILE_BYTES
@@ -681,7 +779,15 @@ export async function fetchCommitArtifacts(
   async function fetchFile(
     relativePath: string,
     isOptional = false,
-  ): Promise<{ ok: boolean; notFound?: boolean; content?: Buffer; errorCode?: string; message?: string }> {
+  ): Promise<{
+    ok: boolean
+    notFound?: boolean
+    content?: Buffer
+    errorCode?: string
+    message?: string
+    /** §11.8 结构化失败形状（退役字段：只在传输层失败时出现，`install-fail` 不带）。 */
+    detail?: unknown
+  }> {
     // 白名单与路径安全校验
     if (!allowedArtifactPaths.has(relativePath)) {
       return {
@@ -698,30 +804,68 @@ export async function fetchCommitArtifacts(
       }
     }
 
-    const url = `https://raw.githubusercontent.com/${owner}/${repo}/${commit}/${relativePath}`
+    const url = `${rawBase}/${owner}/${repo}/${commit}/${relativePath}`
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
 
     let res: Response
     try {
-      res = await fetcher(url, {
-        method: 'GET',
-        headers,
-        signal: controller.signal,
+      // 防御性竞速：即使注入的 fetcher 忽略 `signal`（历史缺陷，`direct-http` 曾完全不看它），
+      // 总时限也必须能真正结束这一趟。否则"到点了但 await 永远不返回"，用户界面就一直转圈。
+      const aborted = new Promise<never>((_, rejectAborted) => {
+        controller.signal.addEventListener(
+          'abort',
+          () => {
+            const err = new Error(`已超过单文件总时限 ${timeoutMs}ms`)
+            err.name = 'TimeoutError'
+            rejectAborted(err)
+          },
+          { once: true },
+        )
       })
+      res = await Promise.race([
+        fetcher(url, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        }),
+        aborted,
+      ])
     } catch (err: any) {
       clearTimeout(timer)
+      const detail = err instanceof Error ? err.message : String(err)
+      // 传输类失败带上结构化诊断；内容/协议类失败不带（别把两类混成一个字段）。
+      const transportDetail = transportDetailFrom(err)
       if (controller.signal.aborted) {
         return {
           ok: false,
           errorCode: 'PROTOCOL_INVALID',
-          message: `拉取文件超时 (${timeoutMs}ms): ${relativePath}`,
+          message: `拉取文件超过总时限 (${timeoutMs}ms): ${relativePath}（链路太慢或中途卡住，可重试）${rawBaseHint(rawBase)}`,
+          detail: transportDetail,
+        }
+      }
+      // 分层文案：链路长时间无数据（内层 socket 空闲超时）与真正的网络异常要分开，
+      // 否则"慢"和"断"永远混在一句"超时"里，用户和排查的人都只能猜。
+      if (err instanceof Error && err.name === 'AbortError') {
+        return {
+          ok: false,
+          errorCode: 'PROTOCOL_INVALID',
+          message: `拉取文件被取消: ${relativePath}：${detail}`,
+          detail: transportDetail,
+        }
+      }
+      if (/空闲超时|timed?\s?out|ETIMEDOUT/i.test(detail)) {
+        return {
+          ok: false,
+          errorCode: 'PROTOCOL_INVALID',
+          message: `拉取文件超时（链路长时间无数据）: ${relativePath}：${detail}${rawBaseHint(rawBase)}`,
+          detail: transportDetail,
         }
       }
       return {
         ok: false,
         errorCode: 'PROTOCOL_INVALID',
-        message: `拉取文件网络异常: ${err instanceof Error ? err.message : String(err)}`,
+        message: `拉取文件网络异常: ${detail}`,
       }
     }
     clearTimeout(timer)
@@ -891,6 +1035,26 @@ export async function fetchCommitArtifacts(
   }
 }
 
+/**
+ * §11.9 开关的取值口径。
+ *
+ * 只认 `1` 会让 `true`/`yes` 变成**静默不生效**：设了、重启了、验收清单也勾了，
+ * 而插件仍按关闭运行 —— 与"动作做了、作用对象不对"是同一类假通过。
+ * 这里接受常见真值写法，其余一律视为关闭（未知值不该被猜成开启）。
+ */
+/**
+ * @internal 仅供探针读取，非对外 API（见 `.botharness/report-flag-probe/probe.mjs`）。
+ *
+ * 导出是为了让第 ③ 步验的是**编译产物里的真实解析**，而不是脚本里复刻一遍逻辑。
+ * 它不经 `packages/dsh-gamecenter/src/index.ts` 再导出，因此不在插件公开面上；
+ * 请勿从 index 导出它，也不要把它当成配置读取入口。
+ */
+export function readReportDownloadFailEnv(): boolean {
+  const raw = process.env.DSH_GAMECENTER_REPORT_DOWNLOAD_FAIL
+  if (typeof raw !== 'string') return false
+  return /^(?:1|true|yes|on)$/i.test(raw.trim())
+}
+
 export interface GameCenterServiceOptions {
   wallet?: WhaleWallet | undefined
   playerId: string
@@ -906,6 +1070,19 @@ export interface GameCenterServiceOptions {
    * 为空时远端目录与上报一起整体静默，不重试、不排队。
    */
   catalogBaseUrl?: string | undefined
+  /**
+   * 产物下载主机前缀（默认 `https://raw.githubusercontent.com`）。
+   * 官方 raw 域名在某些线路不可达时，配置成可用镜像前缀即可，例如
+   * `https://ghfast.top/https://raw.githubusercontent.com`。
+   * 镜像不被信任：安装阶段仍在本地重算 manifestDigest / bundleDigest。
+   */
+  rawBaseUrl?: string | undefined
+  /**
+   * §11.9 `download-fail` 上报开关，**默认关闭**。
+   * 后台 `report_events.kind` 是 ENUM 列，`006` 迁移（扩值 + detail 列）应用并经项目管理确认前，
+   * 客户端只发旧三个 kind，否则上报会被 ENUM 拒收。见 docs/gamecenter-admin-backend.md §11.10。
+   */
+  reportDownloadFailures?: boolean | undefined
   /** 装机级 installId；缺省时按 `<gameLibraryDir>/.install-id` 读取或首次生成。 */
   installId?: string | undefined
   catalogGithubToken?: string | undefined
@@ -1073,6 +1250,8 @@ export class GameCenterService extends Base {
   readonly manifestResolver?: ((gameId: string, commit?: string) => Promise<GameManifestV1 | null>) | undefined
   readonly aiBroker?: ((slot: string, input: unknown, signal?: AbortSignal) => Promise<unknown>) | undefined
   readonly catalogBaseUrl?: string | undefined
+  readonly rawBaseUrl?: string | undefined
+  readonly reportDownloadFailures: boolean
   readonly installId?: string | undefined
   private reportClientPromise?: Promise<RemoteReportClient | undefined>
   private remoteCatalogProvider?: RemoteCatalogProvider
@@ -1134,6 +1313,8 @@ export class GameCenterService extends Base {
     this.dnsLookup = options.dnsLookup
     this.mediaSecurityVerified = options.mediaSecurityVerified ?? false
     this.catalogBaseUrl = options.catalogBaseUrl
+    this.rawBaseUrl = options.rawBaseUrl
+    this.reportDownloadFailures = options.reportDownloadFailures ?? readReportDownloadFailEnv()
     this.installId = options.installId
   }
 
@@ -1621,8 +1802,15 @@ export class GameCenterService extends Base {
         // GitHub 产物下载同样直连优先：死代理会把它变成"拉不到产物"，与"提交不存在"混淆。
         fetcher: this.catalogFetcher ?? this.resilientFetcher,
         token: this.catalogGithubToken,
+        // 官方 raw 域名不可达的线路上，由配置切到可用镜像（内容仍由摘要把关）。
+        rawBase: this.rawBaseUrl,
       })
       if (!fetchRes.ok || !fetchRes.bundledSource) {
+        // §11.9：字节没到手 ⇒ `download-fail`（不是 `install-fail`）。不发也不影响记账。
+        // 迁移未确认前默认不发：ENUM 会拒收新值，反而制造"上报失败"的噪声。
+        if (this.reportDownloadFailures && fetchRes.detail !== undefined) {
+          reporter?.downloadFailed?.(fetchRes.detail)
+        }
         return {
           ok: false,
           errorCode: fetchRes.errorCode ?? 'PROTOCOL_INVALID',
@@ -1630,6 +1818,33 @@ export class GameCenterService extends Base {
         }
       }
       bundledSource = fetchRes.bundledSource
+    }
+
+    // 安装计划里的 version 会落进 `<gameId>/<commit>/.dsh-installed.json`，供审计与展示读取。
+    // 这里**不能**写常量：2026-10-28 实测三个游戏的安装记录版本全是 `1.0.0`，掩盖了真实版本。
+    // 取值优先级：包内清单（字节已过 digest 校验）> 本地已有安装记录 > 兜底常量。
+    let resolvedVersion = '1.0.0'
+    const manifestContent = bundledSource?.manifestContent
+    if (typeof manifestContent === 'string') {
+      try {
+        const parsedManifest = JSON.parse(manifestContent) as { version?: unknown }
+        if (typeof parsedManifest.version === 'string' && parsedManifest.version !== '') {
+          resolvedVersion = parsedManifest.version
+        }
+      } catch {
+        // 清单畸形：安装器随后会以 PROTOCOL_INVALID 拒绝，这里不额外抛错。
+      }
+    } else {
+      // 幂等路径（已安装，不重新下载）：沿用本地记录的版本，避免把真实版本覆盖成占位符。
+      try {
+        const metaRaw = await fs.promises.readFile(path.join(targetDir, '.dsh-installed.json'), 'utf-8')
+        const meta = JSON.parse(metaRaw) as { version?: unknown }
+        if (typeof meta.version === 'string' && meta.version !== '') {
+          resolvedVersion = meta.version
+        }
+      } catch {
+        // 读不到记录就保持兜底常量；该路径不会重写元数据。
+      }
     }
 
     return prepareInstall({
@@ -1646,7 +1861,7 @@ export class GameCenterService extends Base {
         },
         title: input.gameId,
         summary: '',
-        version: '1.0.0',
+        version: resolvedVersion,
       },
       approvals: approval && !this.approvals.some(a => a.gameId === approval.gameId && a.commit === approval.commit)
         ? [...this.approvals, approval]
@@ -2720,6 +2935,8 @@ export function defineGameCenterService(
     manifestResolver: options.manifestResolver,
     aiBroker: options.aiBroker,
     catalogBaseUrl: options.catalogBaseUrl,
+    rawBaseUrl: options.rawBaseUrl ?? process.env.DSH_GAMECENTER_RAW_BASE,
+    reportDownloadFailures: options.reportDownloadFailures,
     installId: options.installId,
   }
   return new GameCenterService(ctx as Context, core, fullOptions)
