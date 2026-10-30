@@ -52,12 +52,13 @@
 | 逐扫描线 OBJ 上限（64 精灵/行、1024 像素/行） | `obj-oracle.mjs` 内的计数 | 帧 3200 | **该帧从未接近上限**：最忙一行 17 个精灵 / 228 px | 2026-10-30 | **未验证**——上限逻辑没被这帧行使过，全等不能证明它实现对 |
 | 整屏 oracle（层间关系，不隔离） | `frame-oracle.mjs` | 新 dump（`vram 73025eda…`）+ 合成图 | 240×160 逐像素；`bldcnt` 四字段进 `summary.json`；**三条独立路径逐字相同**：BG1 opaque `12,574` / 混合可见 `11,643` / 盲区 `931` | 2026-10-30（新 dump 重出） | 已跑可当基线；旧 `13,515/14,564/1,049` 随旧 dump 退役 |
 | 盲区（不可判区）必须由参照侧独立算 | 硬件 A/B：同一 savestate 只改 `BLDCNT`（`0x0c42` ↔ `0`）跑两次 | `frame900.json`（`c1fdc400…`） | 两次输出相同的像素 ∩ BG1 不透明 = `931`（分布在 10 个 16×16 块）；`computedBy: reference-side`（被测实现不参与） | 2026-10-30（游戏实现） | 已跑 |
+| BLDCNT 改动必须证明“在渲染时生效”（帧末回读不可作证据） | `bldcnt-per-line.mjs` | 同一 savestate；两种配置（`0xc42` / `0`）各跑一次 | 逐扫描线渲染前强制写入时，`bldcntWhileRendering` 应分别为 `0xc42` / `0x0`；若帧末回读两次都读到 `0xc42`，说明改动被游戏在帧内改回，实验作废 | **未记录**（作者侧跑过，我没有原始输出） | 待作者补复现命令与两次 `bldcntWhileRendering` 原值；本行按“没跑过”读 |
 | **改 IO 寄存器的实验必须证明"改动在渲染时生效"** | 渲染期取样：包 `renderScanline`，逐行写入后读回 | 同 savestate 跑两次 | 两次渲染期读数必须**不同**（`0xc42` vs `0`）；**帧末回读不可作证据**——游戏会在帧内把值写回，两次跑成同一配置时数字照样自洽 | 2026-10-30（游戏实现：第一版帧末回读两次都是 `0xc42`，实验被自己否掉；改逐行强制写入后才有证据） | 已跑；这条是"三段式对撞"的**前置闸门**，不通过不许报数 |
 | 掩码/盲区集合级对撞（**判据取打包 sha，不取 PNG sha**） | 无（对撞按约定手工执行） | 240×160、行优先、白=1、MSB-first、行末补 0 到整字节 | `bg1-mask` 打包 `cb41549a…`、`blindzone` 打包 `4df02f1e…`，两侧逐像素 `onlyMine 0 / onlyImpl 0` | 2026-10-30 | 已跑；**PNG 文件 sha 不同只是编码器差异（RGB vs RGBA），不作判据** |
 | **打包器约定已知答案向量**（两个独立打包器必须都复现，否则打包 sha 不能当判据） | `mask-pack/pack.mjs --selftest` | 手写向量：V1 `4×2` 字节 `90 60`；V2 `240×1` 首尾两列 `80 00…00 01`（30 B） | `V1 sha256:590ddde5444fee9a…`、`V2 sha256:4e7c5c4437b58d50…`；`self-test PASS (8 条)` | 2026-10-30 | 新增；预期值锚在**手写字节**上（取哈希不算打包），不是锚在某个打包器的输出上；第 8 条断言 LSB-first 版必须得 `09 06` 而非 `90 60` ⇒ **向量能区分 bit 序** |
 | **掩码 bit 序分歧的判定**（同一像素集合、两种约定） | `mask-pack/pack.mjs`（MSB）vs `1<<b`（LSB） | `frame900/bg1-mask.png`、`frame900/bg1-blindzone.png`，240×160，4,800 B | MSB：`cb41549a…`（`12,574 px`）/ `4df02f1e…`（`931 px`）；LSB：`26a7999d…` / `99c0558d…`；**实测 `lsb == 逐字节 bit 反转(msb)`，两侧 4,800 B 逐字节成立** | 2026-10-30 | 已复核：两套 sha 不是内容差异，是表示差异；约定以 MSB-first 为准（`0x80>>b`） |
 | 掩码打包接口形状（扁平数组 vs 二维 rows） | `mask-pack/pack.mjs --selftest`（第 9、10 条） | `packMask([0,1,0,1])`、`packMask([[0,255]])` | 两者都必须抛错且消息点名原因（`二维数组` / `0/1`） | 2026-10-30 | 该族 bug：形状不对仍算出「看着像 sha 的错值」；旧版对扁平数组静默出全零 |
-| 参照副本是否漂移（副本 = 第二份真相） | `mask-pack/check-drift.mjs` | `tools/mask-pack/pack.mjs` vs `games/sacred-stones/tools/mask-pack-reference.mjs` | 两边 sha256 必须相等；不等则 exit 1 并打印 `cp` 修复命令 | 2026-10-30 | 首跑 **FAIL**（`cae1d81d…` vs `5ad782c5…`，我加守卫后副本没跟上）→ 已刷新副本 → PASS；对撞用例 4/4 仍绿 |
+| 参照副本是否漂移（副本 = 第二份真相） | `mask-pack/check-drift.mjs` | `git show <source_commit>:tools/mask-pack/pack.mjs` vs `git show <copy_commit>:games/sacred-stones/tools/mask-pack-reference.mjs`（各取该路径最后一次提交：本次 `8a1cc43` / `feb20d6`） | **两侧从 git 对象各自重算**的 sha256 必须相等；不等则 exit 1。产地章里的 `source_sha256`/`copy_sha256` **只作对照**（过期单独报一类），不作判定依据；工作区脏另报一类（脏 ≠ 漂） | 2026-10-30 | `drift PASS (1 对：从 git 对象重算一致)`，两侧 `cae1d81d9e32…`；三条失败面各跑一次：上游工作区加一行 → FAIL exit 1 且提示"先 commit 别 refresh"；`MASK_PACK_REFRESH_SCRIPT` 指向不存在路径 → FAIL exit 1 并指名路径（不再静默用工作区顶替）；正常 → PASS exit 0 |
 | **dump 侧 sha（`registers_sha256`/`self_sha256`/`vram_sha256`）** | 无（需作者给规则） | 序列化规则须写明：字段顺序、是否含 JSON 空白、数值格式、`self` 字段如何置零 | 缺规则时**按"声明"读，不作判据** | 未记录 | 与 bit 序同一类问题：没有约定就无法独立复算；待游戏实现补一句规则后才可升为判据 |
 | 帧比较（差异像素数与占比、边界框） | `compare-frame.mjs` | 实际图 + 期望图 | 输出差异像素数 / 占比 / 边界框 | 2026-10-30 | 已跑 |
 | 出包前硬自检（无 `import`/`export`、无大块 `data:`、≤2 MB） | `check-dist.mjs` | `dist/` | 全过才允许产物进 Issue | 2026-10-30 | 已跑 |
@@ -186,6 +187,8 @@ mask_convention { width 240, height 160, row_major, bit_source, msb_first, pad }
 - `package-landlord-candidate.mjs` — 打包候选产物
 - `package-library-candidate.mjs` — 打包候选产物
 - `rom-frame-proof.mjs` — 游戏实现新增的帧证明脚本；我未跑过、不清楚它的输入与期望值，**按排除处理并在此留痕**，待作者补一行正式判据行（若它其实是判据，这条就该被删掉）
+- `blindzone-legacy-probe.mjs` — 游戏实现 2026-10-30 新增的“旧盲区口径”探针；**我没有它的期望值、也没跑过**，`check-index` 于 05:0x 首报未登记。按排除留痕，待作者说明它是判据还是临时探针——若是判据（应当能给出 pass/fail）就补一行正式判据行并删掉本条
+- `refresh-mask-pack-copy.mjs` — 只读副本的**唯一写者**（字节取自 `git show HEAD:<path>`，非工作区）；`tools/mask-pack/check-drift.mjs --refresh` 已改为委托它，二者不是并列的判据脚本
 
 ## 口径提醒（三个容易记错的数）
 
