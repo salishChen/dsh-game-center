@@ -29,6 +29,11 @@ const SCREEN_H = 160;
 const TILE_BYTES_16 = 32;
 const TILE_BYTES_256 = 64;
 
+// 守卫：这两个常量写错时游戏"能跑、不报错、只是画得不对"，是这个项目里最难自查的一类错。
+// 断言放在模块加载时执行，任何人把它改小都会立刻红，而不是等下一次去做像素比对才发现。
+if (!(OBJ_PALETTE_OFFSET >= 0x200)) throw new Error(`OBJ 调色板起始偏移必须 >= 0x200（512 字节），当前 0x${OBJ_PALETTE_OFFSET.toString(16)}`);
+if (!(OBJ_TILE_BASE >= 0x10000)) throw new Error(`OBJ 图块基址必须 >= 0x10000，当前 0x${OBJ_TILE_BASE.toString(16)}`);
+
 export const OBJ_SHAPE = {SQUARE: 0, WIDE: 1, TALL: 2, PROHIBITED: 3};
 
 /** shape × size → [宽, 高]（像素）。prohibited 组合返回 null。 */
