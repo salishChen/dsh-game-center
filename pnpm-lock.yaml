@@ -29,7 +29,7 @@ importers:
 
   games/crazy-flasher4: {}
 
-  games/fe8-remake:
+  games/sacred-stones:
     dependencies:
       '@gba-kit/arm-emulator':
         specifier: 0.8.0
