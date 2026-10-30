@@ -34,11 +34,20 @@ export const CONVENTION = {
 
 /** 把一行像素（0/1 数组）打包成字节；末尾不足 8 位补 0。 */
 export function packRow(row) {
+  if (!Array.isArray(row)) {
+    throw new TypeError(`packRow 需要一维数组，收到 ${typeof row}（值 ${JSON.stringify(row)}）`);
+  }
   const out = [];
   for (let i = 0; i < row.length; i += 8) {
     let byte = 0;
     for (let b = 0; b < 8; b++) {
       const v = i + b < row.length ? row[i + b] : 0;
+      // 只接受 0/1/true/false：255、'1'、undefined 一律报错。
+      // 这一条是为了掐掉"接口形状不对但算出个结果"这一族 bug —— 静默把 255 当 1、
+      // 或把扁平数组当 rows 传进来，都会算出一个**看着像 sha 的错值**。
+      if (v !== 0 && v !== 1 && v !== true && v !== false) {
+        throw new TypeError(`掩码元素必须是 0/1/true/false，第 ${i + b} 个是 ${JSON.stringify(v)}`);
+      }
       if (v) byte |= 0x80 >> b;
     }
     out.push(byte);
@@ -48,6 +57,15 @@ export function packRow(row) {
 
 /** 把整幅掩码（二维 0/1）打包成 Buffer，行优先、每行独立补位。 */
 export function packMask(rows) {
+  if (!Array.isArray(rows)) {
+    throw new TypeError(`packMask 需要二维数组（每行一个数组），收到 ${typeof rows}`);
+  }
+  if (rows.length > 0 && !Array.isArray(rows[0])) {
+    const hint =
+      '如果你手上是扁平像素数组（packMask(pixels, {width, height}) 那种形状），' +
+      '先按宽度切片：Array.from({length: h}, (_, y) => flat.slice(y * w, (y + 1) * w))';
+    throw new TypeError(`packMask 需要二维数组（每行一个数组），但第一行是 ${typeof rows[0]}；${hint}`);
+  }
   const widths = new Set(rows.map((r) => r.length));
   if (widths.size > 1) throw new Error(`行宽不一致: ${[...widths].join(',')}`);
   const out = [];
@@ -149,6 +167,23 @@ function selftest() {
     lsbBytes.equals(Buffer.from([0x09, 0x06])) && !lsbBytes.equals(Buffer.from(VECTORS[0].expectedBytes)),
     lsbBytes.toString('hex'),
   );
+
+  // 接口形状错必须出声：扁平数组当 rows 传进来时，旧版会静默算出全零（"看着像 sha 的错值"）
+  let shapeMsg = '';
+  try {
+    packMask([0, 1, 0, 1]);
+  } catch (e) {
+    shapeMsg = e.message;
+  }
+  check('扁平数组当 rows 传入必须抛错且点名原因', shapeMsg.includes('二维数组'), shapeMsg || '未抛错');
+
+  let valueMsg = '';
+  try {
+    packMask([[0, 255]]);
+  } catch (e) {
+    valueMsg = e.message;
+  }
+  check('掩码元素非 0/1（255）必须抛错而不是当 1', valueMsg.includes('0/1'), valueMsg || '未抛错');
 
   if (fails.length) {
     console.log(`\nself-test FAIL (${fails.length}/${n}): ${fails.join('; ')}`);

@@ -27,6 +27,16 @@ export const MASK_CONVENTION = Object.freeze({
 
 /** 打包成字节。`pixels[i]` 非 0 视为 1。 */
 export function packMask(pixels, {width = MASK_CONVENTION.width, height = MASK_CONVENTION.height} = {}) {
+  // 形状核对：喂错了不会被发现，只会安静地算出另一组字节。
+  // 本项目真踩过：把扁平数组喂给"收 rows 二维数组"的接口，对撞测试报"两套实现对不上"，
+  // 而真相只是调用错。这类 bug 的特征是**不报错、只安静取错**。
+  const expected = width * height;
+  if (!pixels || typeof pixels.length !== 'number') {
+    throw new TypeError('packMask 需要可索引的像素数组（扁平，长度 = width × height）');
+  }
+  if (pixels.length !== expected) {
+    throw new RangeError(`packMask 像素数量不符：期望 ${expected}（${width}×${height}），实际 ${pixels.length}`);
+  }
   const bytesPerRow = Math.ceil(width / 8);
   const packed = new Uint8Array(bytesPerRow * height);
   for (let y = 0; y < height; y += 1) {

@@ -63,3 +63,43 @@ test('MSB-first 判据：只有最左上像素为 1 时首字节必须是 0x80�
   // 记录当前口径下的 sha，防止"改了 bit 序却没人发现"
   assert.equal(packMaskSha256(pixels, {width: W, height: H}), packMaskSha256(pixels, {width: W, height: H}));
 });
+
+// ── 产地章：只读副本必须能证明自己没漂移 ────────────────────────────────────
+import {readFileSync, existsSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {dirname, join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(here, '..', '..', '..');
+const PROVENANCE = JSON.parse(readFileSync(join(here, '..', 'tools', 'mask-pack-reference.provenance.json'), 'utf8'));
+
+const shaOf = (buf) => createHash('sha256').update(buf).digest('hex');
+const normalizedSha = (buf) => shaOf(Buffer.from(buf.toString('utf8').replace(/\r\n/g, '\n'), 'utf8'));
+
+test('产地章：副本的规范化 sha 必须等于它声明的 copy_sha256_lf（本地被改就红）', () => {
+  const copy = readFileSync(join(repoRoot, PROVENANCE.copy_path));
+  assert.equal(normalizedSha(copy), PROVENANCE.copy_sha256_lf);
+});
+
+test('产地章：副本与上游（若在工作区里）必须内容一致，上游改了副本没跟就红', () => {
+  const upstream = join(repoRoot, PROVENANCE.source_path);
+  if (!existsSync(upstream)) {
+    // 上游只存在于别人的机器上时不跳过判定，而是至少要求副本自证（上一条已覆盖）
+    return;
+  }
+  const source = readFileSync(upstream);
+  assert.equal(normalizedSha(source), PROVENANCE.source_sha256_lf, '上游内容已变，副本必须同步并更新产地章');
+  assert.equal(normalizedSha(readFileSync(join(repoRoot, PROVENANCE.copy_path))), PROVENANCE.source_sha256_lf);
+});
+
+test('输入形状错必须当场抛错，不许安静算出一组字节', () => {
+  // 1) 长度不对（把 240×160 的图喂给 4×2 的声明）
+  assert.throws(() => packMask(new Uint8Array(240 * 160), {width: 4, height: 2}), /像素数量不符/);
+  // 2) 传了二维 rows（另一个实现的口径），必须抛而不是箅
+  assert.throws(() => packMask([[1, 0], [0, 1]], {width: 2, height: 2}), /像素数量不符/);
+  // 3) 长度对但全是 1：输出必须满，且不能被"行末补位"吃成 31 B/行
+  const all = Buffer.from(packMask(new Uint8Array(240 * 2).fill(1), {width: 240, height: 2}));
+  assert.equal(all.length, 60);
+  assert.ok(all.every((b) => b === 0xff));
+});
