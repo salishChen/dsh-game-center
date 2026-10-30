@@ -94,7 +94,8 @@ json.dump({"rom_sha256": ROM_SHA, "total": len(ok), "counts": counts,
           open(OUT_JSON, "w"), indent=1, ensure_ascii=False)
 
 os.makedirs(os.path.dirname(TOOL), exist_ok=True)
-shutil.copyfile(__file__, TOOL)
+if os.path.abspath(__file__) != os.path.abspath(TOOL):
+    shutil.copyfile(__file__, TOOL)
 gen_sha = hashlib.sha256(open(TOOL, "rb").read()).hexdigest()
 
 doc = """# LZ77 对账（我方口径：判据写死，数字只是输出）
