@@ -418,6 +418,12 @@
       ]
     }
   },
+  "mask_1": {
+    "file": "bg1-mask.png",
+    "pixels": 14564,
+    "sha256": "e05ab9517808f6695a899f143d8726790115c6c43ae17e7f233b7ef3b380c114",
+    "definition": "白色=BG1 索引!=0（硬件意义下不透明），黑色=透明；用于与 oracle 的混合掩码对撞"
+  },
   "ab_test": {
     "description": "composite with first-target layer vs without it; half check in 15-bit domain: out_with == out_without >> 1 per 5-bit channel",
     "diff_pixels": 13515,

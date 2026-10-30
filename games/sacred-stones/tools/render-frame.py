@@ -195,6 +195,10 @@ for n in order:
     png_rgb(os.path.join(OUT, "bg%d.png" % n), rows)
 rowsp = [[rgb555(px) for px in row] for row in comp]
 png_rgb(os.path.join(OUT, "composite.png"), rowsp)
+mask_rows = [[(255, 255, 255) if mats[1][y][x] is not None else (0, 0, 0) for x in range(240)] for y in range(160)]
+mask_path = os.path.join(OUT, "bg1-mask.png")
+png_rgb(mask_path, mask_rows)
+mask_sha = hashlib.sha256(open(mask_path, "rb").read()).hexdigest()
 
 summ = {
     "frame": d["frame"],
@@ -212,6 +216,7 @@ summ = {
     "hofs": hofs,
     "vofs": vofs,
     "layers": witness,
+    "mask_1": {"file": "bg1-mask.png", "pixels": witness["1"]["pixels_opaque"], "sha256": mask_sha, "definition": "白色=BG1 索引!=0（硬件意义下不透明），黑色=透明；用于与 oracle 的混合掩码对撞"},
     "ab_test": {"description": "composite with first-target layer vs without it; half check in 15-bit domain: out_with == out_without >> 1 per 5-bit channel", "diff_pixels": ab_diff, "exact_half": ab_half, "layer1_opaque": witness["1"]["pixels_opaque"], "blended_pixels": ab_diff, "no_under_pixels": witness["1"]["pixels_opaque"] - ab_diff},
  "bg1_index_histogram": {("%d" % r): {"pixels": k, "palette_raw": "%04X" % COLORS[(15 << 4) + r]} for (b, r), k in sorted(h1hist.items())} if False else None,
  "composite_rgb_sha256": hashlib.sha256(bytes(c for row in rowsp for px in row for c in px)).hexdigest(),
