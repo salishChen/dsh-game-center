@@ -1,0 +1,102 @@
+{
+  "frame": 900,
+  "source": "extract/frame900.json",
+  "source_vram_sha256": "94a525d6c1a92a170f0c55fcba6d1bc776fa3b5b768b4438c795afd1298ba98d",
+  "source_palette_sha256": "568906629d7f5075ffb75b620acc2c244c6f03a6a5f1c2829b4f7021b4d56cfe",
+  "dispcnt": "0x1E40",
+  "bldcnt_raw": "0x0C42",
+  "firstTarget": [
+    1
+  ],
+  "blendMode": "alpha",
+  "secondTarget": [
+    2,
+    3
+  ],
+  "bd": false,
+  "eva": 8,
+  "evb": 8,
+  "hofs": [
+    0,
+    169,
+    3,
+    0
+  ],
+  "vofs": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "layers": {
+    "0": {
+      "state": "not-drawn",
+      "blend_role": "none"
+    },
+    "1": {
+      "state": "on",
+      "blend_role": "first",
+      "pixels_opaque": 14564,
+      "distinct_colors": 1,
+      "top_colors": [
+        {
+          "color": "0000",
+          "count": 14564
+        }
+      ],
+      "tiles_used": 274,
+      "prio": 1
+    },
+    "2": {
+      "state": "on",
+      "blend_role": "second",
+      "pixels_opaque": 6241,
+      "distinct_colors": 78,
+      "top_colors": [
+        {
+          "color": "19F5",
+          "count": 763
+        },
+        {
+          "color": "2A9A",
+          "count": 716
+        },
+        {
+          "color": "1593",
+          "count": 544
+        }
+      ],
+      "tiles_used": 133,
+      "prio": 2
+    },
+    "3": {
+      "state": "on",
+      "blend_role": "second",
+      "pixels_opaque": 38400,
+      "distinct_colors": 15,
+      "top_colors": [
+        {
+          "color": "0A17",
+          "count": 4142
+        },
+        {
+          "color": "0E59",
+          "count": 3938
+        },
+        {
+          "color": "0000",
+          "count": 3840
+        }
+      ],
+      "tiles_used": 255,
+      "prio": 3
+    }
+  },
+  "composite_rgb_sha256": "1d2b0de6172e2bc2ead3cfddb36049d5eec03ab231325fe252e153a7e334364c",
+  "png_sha256": {
+    "bg1": "43c43f6ae58325eec88aae1987362d100838973610cac1e74a0af6361277f5bd",
+    "bg2": "73d1a8012f699c711de05493bbe543ddf230f4fd9059309dbb2c372869ed23c8",
+    "bg3": "3de7270f4319643fae221e53eaa90e60d857435d54792d22efd548ee25abb429",
+    "composite": "a59a65ab34d8bbf5ea759a5f2e0bd299b082aa1abbfe7e48e31d08eea797e303"
+  }
+}
