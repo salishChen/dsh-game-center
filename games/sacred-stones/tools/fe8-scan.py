@@ -318,7 +318,6 @@ def huffman_decode(rom, i):
 
 
 DECODERS = [("LZ77", 0x10, lz77_decode),
-            ("Huffman", 0x20, huffman_decode),
             ("RLE", 0x30, rle_decode)]
 
 SIZE_BUCKETS = [
