@@ -74,7 +74,7 @@ def labels(d, c):
 
 # self-test：证明每道闸门都"有能力排除"
 st = []
-cases = [((32, 32), []), ((31, 100), ["dlen<32"]), ((100, 31), ["clen<32"]), ((1000, 100), ["dlen>8clen"])]
+cases = [((32, 32), []), ((31, 100), ["dlen<32"]), ((100, 31), ["clen<32"]), ((1000, 100), ["dlen>8clen"]), ((256, 281), [])]
 for (d, c), expect in cases:
     got = labels(d, c)
     st.append({"dlen": d, "clen": c, "labels": got, "expect": expect, "ok": got == expect})
